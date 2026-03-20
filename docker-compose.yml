@@ -1,0 +1,127 @@
+services:
+  # ─── PostgreSQL Database ───────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: wm-postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: waterdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d waterdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - waternet
+
+  # ─── EMQX MQTT Broker ─────────────────────────────────────
+  emqx:
+    image: emqx/emqx:5.8
+    container_name: wm-emqx
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    environment:
+      EMQX_NAME: emqx
+      EMQX_HOST: 127.0.0.1
+      EMQX_LOADED_PLUGINS: "emqx_dashboard"
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+    networks:
+      - waternet
+
+  # ─── Worker Service ────────────────────────────────────────
+  worker:
+    build:
+      context: ./apps/worker
+      dockerfile: Dockerfile
+    container_name: wm-worker
+    environment:
+      MQTT_URL: mqtt://emqx:1883
+      DATABASE_URL: postgres://user:password@postgres:5432/waterdb
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    restart: on-failure
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/worker/src
+          target: /app/src
+    networks:
+      - waternet
+
+  # ─── IoT Simulator ────────────────────────────────────────
+  simulator:
+    build:
+      context: ./services/simulator
+      dockerfile: Dockerfile
+    container_name: wm-simulator
+    environment:
+      MQTT_URL: mqtt://emqx:1883
+      POND_ID: "1"
+    depends_on:
+      emqx:
+        condition: service_healthy
+    restart: on-failure
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/simulator/src
+          target: /app/src
+    networks:
+      - waternet
+
+  # ─── Next.js Web Dashboard ────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: wm-web
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://user:password@postgres:5432/waterdb
+      MQTT_URL: mqtt://emqx:1883
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash-lite}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    restart: on-failure
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/app
+          target: /app/app
+        - action: sync
+          path: ./apps/web/components
+          target: /app/components
+        - action: sync
+          path: ./apps/web/lib
+          target: /app/lib
+        - action: rebuild
+          path: ./apps/web/package.json
+    networks:
+      - waternet
+
+volumes:
+  pgdata:
+
+networks:
+  waternet:
+    driver: bridge
