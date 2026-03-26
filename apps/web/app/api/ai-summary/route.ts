@@ -16,22 +16,22 @@ interface SensorRow {
 
 const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI ahli akuakultur.
 
-Kamu diberikan data kualitas air terbaru dari kolam ikan. Tugasmu adalah menganalisis data dan memberikan rekomendasi singkat dan praktis untuk petani.
+Kamu diberikan data kualitas air terbaru dari kolam ikan. Tugasmu adalah menganalisis data dan memberikan ringkasan kondisi kolam dalam bahasa Indonesia yang sederhana.
 
 Aturan:
-- Fokus utama analisis adalah pH untuk kontrol kapur otomatis
-- Jika pH < 6.5 → jelaskan bahwa aktuator kapur otomatis sedang/akan aktif
-- Jika pH >= 6.5 → sampaikan kondisi pH aman
+- Fokuskan ringkasan pada pH dan kondisi kontrol kapur otomatis
+- Jika pH < 6.5 → jelaskan kapur otomatis aktif
+- Jika pH >= 6.5 → jelaskan pH aman
 - Selalu berikan saran yang bisa langsung dilakukan
+- Gunakan bahasa yang sederhana, bisa dipahami petani
 
 Format respons:
-- Maksimal 3 kalimat
-- Bahasa Indonesia sederhana
-- Tanpa istilah teknis, tanpa JSON, tanpa markdown
-- Ringkas, praktis, dan membantu
-- Hindari pernyataan umum`;
+- Maksimal 2-3 kalimat
+- Bahasa Indonesia sederhana, tanpa istilah teknis
+- Tanpa JSON, tanpa markdown
+- Langsung ke inti masalah dan saran`;
 
-function buildUserPrompt(rows: SensorRow[]): string {
+function buildUserPrompt(rows: SensorRow[], pondId: number): string {
   const sensorJson = rows.map((r) => ({
     ph: r.ph_level,
     waktu: new Date(r.created_at).toISOString(),
@@ -54,22 +54,21 @@ function buildUserPrompt(rows: SensorRow[]): string {
         ? "meningkat"
         : "stabil";
 
-  return `Berikut ${rows.length} data sensor terbaru dari kolam (terbaru di atas):
+  return `Berikut ${rows.length} data sensor terbaru dari Kolam ${pondId} (terbaru di atas):
 
 ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan sistem: jika pH < 6.5 maka aktuator kapur otomatis ON
+Aturan sistem: pH < 6.5 => aktuator kapur otomatis ON
 
-Analisis dan beri saran.`;
+Berikan ringkasan kondisi harian dalam 2-3 kalimat bahasa Indonesia.`;
 }
 
 function parseRetryDelayMs(error: unknown): number {
   const fallbackMs = 60_000;
   if (!(error instanceof Error)) return fallbackMs;
 
-  // Gemini SDK error string often includes: "Please retry in 40.10s"
   const retryMatch = error.message.match(/retry in\s+([\d.]+)s/i);
   if (!retryMatch) return fallbackMs;
 
@@ -91,56 +90,46 @@ function isQuotaError(error: unknown): boolean {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const pondId = searchParams.get("pondId");
+    const pondId = parseInt(searchParams.get("pondId") || "1", 10);
 
-    let result;
-    if (pondId) {
-      result = await pool.query<SensorRow>(
-        `SELECT pond_id, temperature, do_level, ph_level, created_at
-         FROM sensor_data
-         WHERE pond_id = $1
-         ORDER BY created_at DESC
-         LIMIT 20`,
-        [parseInt(pondId, 10)],
-      );
-    } else {
-      result = await pool.query<SensorRow>(
-        `SELECT pond_id, temperature, do_level, ph_level, created_at
-         FROM sensor_data
-         ORDER BY created_at DESC
-         LIMIT 20`,
-      );
-    }
+    const result = await pool.query<SensorRow>(
+      `SELECT pond_id, temperature, do_level, ph_level, created_at
+       FROM sensor_data
+       WHERE pond_id = $1
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [pondId],
+    );
 
     if (result.rows.length === 0) {
       return NextResponse.json({
         success: true,
-        insight:
+        summary:
           "Belum ada data sensor. Sistem menunggu telemetri dari perangkat kolam.",
         source: "fallback",
       });
     }
 
     if (!process.env.GEMINI_API_KEY) {
-      const insight = generateFallbackInsight(result.rows);
+      const summary = generateFallbackSummary(result.rows, pondId);
       return NextResponse.json({
         success: true,
-        insight,
+        summary,
         source: "rule-based",
       });
     }
 
     if (Date.now() < geminiCooldownUntil) {
-      const insight = generateFallbackInsight(result.rows);
+      const summary = generateFallbackSummary(result.rows, pondId);
       return NextResponse.json({
         success: true,
-        insight,
+        summary,
         source: "rule-based",
       });
     }
 
     try {
-      const userPrompt = buildUserPrompt(result.rows);
+      const userPrompt = buildUserPrompt(result.rows, pondId);
       const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 
       const response = await ai.models.generateContent({
@@ -148,17 +137,17 @@ export async function GET(request: NextRequest) {
         contents: userPrompt,
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
-          maxOutputTokens: 150,
+          maxOutputTokens: 200,
           temperature: 0.3,
         },
       });
 
-      const insight =
-        response.text?.trim() || "Tidak dapat menghasilkan insight saat ini.";
+      const summary =
+        response.text?.trim() || "Tidak dapat menghasilkan ringkasan saat ini.";
 
       return NextResponse.json({
         success: true,
-        insight,
+        summary,
         source: "ai",
       });
     } catch (error) {
@@ -166,18 +155,17 @@ export async function GET(request: NextRequest) {
         const retryMs = parseRetryDelayMs(error);
         geminiCooldownUntil = Date.now() + retryMs;
 
-        // Log once per 30s to avoid noisy repeated logs from polling cards.
         if (Date.now() - lastQuotaLogAt > 30_000) {
           console.warn(
-            `[API /ai-insight] Gemini quota reached. Using rule-based fallback for ${Math.ceil(retryMs / 1000)}s.`,
+            `[API /ai-summary] Gemini quota reached. Using rule-based fallback for ${Math.ceil(retryMs / 1000)}s.`,
           );
           lastQuotaLogAt = Date.now();
         }
 
-        const insight = generateFallbackInsight(result.rows);
+        const summary = generateFallbackSummary(result.rows, pondId);
         return NextResponse.json({
           success: true,
-          insight,
+          summary,
           source: "rule-based",
         });
       }
@@ -185,47 +173,36 @@ export async function GET(request: NextRequest) {
       throw error;
     }
   } catch (error) {
-    console.error("[API /ai-insight] Error:", error);
+    console.error("[API /ai-summary] Error:", error);
 
     try {
       const { searchParams } = new URL(request.url);
-      const pondId = searchParams.get("pondId");
-
-      let result;
-      if (pondId) {
-        result = await pool.query<SensorRow>(
-          `SELECT pond_id, temperature, do_level, ph_level, created_at
-           FROM sensor_data
-           WHERE pond_id = $1
-           ORDER BY created_at DESC
-           LIMIT 20`,
-          [parseInt(pondId, 10)],
-        );
-      } else {
-        result = await pool.query<SensorRow>(
-          `SELECT pond_id, temperature, do_level, ph_level, created_at
-           FROM sensor_data
-           ORDER BY created_at DESC
-           LIMIT 20`,
-        );
-      }
-      const insight = generateFallbackInsight(result.rows);
+      const pondId = parseInt(searchParams.get("pondId") || "1", 10);
+      const result = await pool.query<SensorRow>(
+        `SELECT pond_id, temperature, do_level, ph_level, created_at
+         FROM sensor_data
+         WHERE pond_id = $1
+         ORDER BY created_at DESC
+         LIMIT 20`,
+        [pondId],
+      );
+      const summary = generateFallbackSummary(result.rows, pondId);
       return NextResponse.json({
         success: true,
-        insight,
+        summary,
         source: "rule-based",
       });
     } catch {
       return NextResponse.json(
-        { success: false, error: "Gagal menghasilkan insight" },
+        { success: false, error: "Gagal menghasilkan ringkasan" },
         { status: 500 },
       );
     }
   }
 }
 
-function generateFallbackInsight(rows: SensorRow[]): string {
-  if (rows.length === 0) return "Belum ada data sensor.";
+function generateFallbackSummary(rows: SensorRow[], pondId: number): string {
+  if (rows.length === 0) return "Belum ada data sensor untuk kolam ini.";
 
   const latest = rows[0];
   const phValues = rows
@@ -243,26 +220,24 @@ function generateFallbackInsight(rows: SensorRow[]): string {
 
   if (latest.ph_level === null) {
     parts.push(
-      "Data pH belum tersedia. Pastikan sensor pH aktif agar kontrol kapur otomatis berjalan.",
+      `Data pH Kolam ${pondId} belum tersedia. Pastikan sensor pH aktif agar kontrol kapur otomatis berjalan.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)}. Aktuator kapur otomatis sedang diaktifkan untuk menaikkan pH.`,
+      `pH Kolam ${pondId} turun ke ${latest.ph_level.toFixed(1)}. Sistem mengaktifkan aktuator kapur otomatis untuk koreksi.`,
     );
   } else {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang aman. Aktuator kapur tetap siaga.`,
+      `Kondisi Kolam ${pondId} stabil dengan pH ${latest.ph_level.toFixed(1)} dalam rentang aman.`,
     );
   }
 
   if (newerAvg < olderAvg - 0.1) {
     parts.push(
-      `Tren pH cenderung menurun. Pantau lebih sering agar koreksi kapur tidak terlambat.`,
+      `Tren pH cenderung menurun, jadi pemantauan perlu ditingkatkan.`,
     );
   } else if (newerAvg > olderAvg + 0.1) {
-    parts.push(`Tren pH membaik. Pertahankan pemantauan rutin.`);
-  } else {
-    parts.push(`Tren pH stabil. Tidak perlu tindakan tambahan saat ini.`);
+    parts.push(`Tren pH membaik.`);
   }
 
   return parts.join(" ");

@@ -5,19 +5,20 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { pondId, aerator } = body;
+    const { pondId, lime } = body;
+    const hasLimeCommand = lime !== undefined;
 
     // Validate input
-    if (!pondId || !aerator) {
+    if (!pondId || !hasLimeCommand) {
       return NextResponse.json(
-        { success: false, error: "Missing pondId or aerator" },
+        { success: false, error: "Missing pondId or lime command" },
         { status: 400 },
       );
     }
 
-    if (aerator !== "ON" && aerator !== "OFF") {
+    if (hasLimeCommand && lime !== "ON" && lime !== "OFF") {
       return NextResponse.json(
-        { success: false, error: "aerator must be 'ON' or 'OFF'" },
+        { success: false, error: "lime must be 'ON' or 'OFF'" },
         { status: 400 },
       );
     }
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     // Publish MQTT control command
     const client = getMqttClient();
     const topic = `pond/${pondId}/control`;
-    const payload = JSON.stringify({ aerator });
+    const payload = JSON.stringify({ lime });
 
     await new Promise<void>((resolve, reject) => {
       client.publish(topic, payload, { qos: 1 }, (err) => {
@@ -34,18 +35,31 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // Log the control command
-    await pool.query(
-      `INSERT INTO control_log (pond_id, aerator, source, created_at)
-       VALUES ($1, $2, $3, NOW())`,
-      [pondId, aerator, "manual"],
-    );
+    try {
+      await pool.query(
+        `INSERT INTO control_log (pond_id, action, source, created_at)
+         VALUES ($1, $2, $3, NOW())`,
+        [pondId, `LIME_${lime}`, "manual"],
+      );
+    } catch (err: unknown) {
+      // Backward compatibility for DBs that still have legacy `aerator` column.
+      const pgErr = err as { code?: string };
+      if (pgErr?.code === "42703") {
+        await pool.query(
+          `INSERT INTO control_log (pond_id, aerator, source, created_at)
+           VALUES ($1, $2, $3, NOW())`,
+          [pondId, `LIME_${lime}`, "manual"],
+        );
+      } else {
+        throw err;
+      }
+    }
 
-    console.log(`[API /control] Sent ${aerator} to ${topic}`);
+    console.log(`[API /control] Sent ${payload} to ${topic}`);
 
     return NextResponse.json({
       success: true,
-      message: `Aerator ${aerator} command sent to pond ${pondId}`,
+      message: `Lime ${lime} command sent to pond ${pondId}`,
     });
   } catch (error) {
     console.error("[API /control] Error:", error);

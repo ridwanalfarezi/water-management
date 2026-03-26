@@ -38,9 +38,20 @@ client.on("connect", () => {
       doLevel = parseFloat((3 + Math.random() * 5).toFixed(2));
     }
 
+    // pH: mostly 6.5-8.5, ~15% chance of dropping to 6.0-6.5
+    let phLevel: number;
+    if (Math.random() < 0.15) {
+      // Low pH scenario (6.0 - 6.5)
+      phLevel = parseFloat((6.0 + Math.random() * 0.5).toFixed(2));
+    } else {
+      // Normal pH (6.5 - 8.5)
+      phLevel = parseFloat((6.5 + Math.random() * 2.0).toFixed(2));
+    }
+
     const payload = JSON.stringify({
       temperature,
       do: doLevel,
+      ph: phLevel,
     });
 
     const topic = `pond/${POND_ID}/sensor`;

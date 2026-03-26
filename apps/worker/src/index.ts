@@ -6,6 +6,7 @@ const { Pool } = pg;
 const MQTT_URL = process.env.MQTT_URL || "mqtt://localhost:1883";
 const DATABASE_URL =
   process.env.DATABASE_URL || "postgres://user:password@localhost:5432/waterdb";
+const PH_LIME_THRESHOLD = 6.5;
 
 // PostgreSQL connection pool
 const pool = new Pool({
@@ -38,28 +39,44 @@ async function saveSensorData(
   pondId: number,
   temperature: number,
   doLevel: number,
+  phLevel: number | null,
 ): Promise<void> {
   const query = `
-    INSERT INTO sensor_data (pond_id, temperature, do_level, created_at)
-    VALUES ($1, $2, $3, NOW())
+    INSERT INTO sensor_data (pond_id, temperature, do_level, ph_level, created_at)
+    VALUES ($1, $2, $3, $4, NOW())
   `;
-  await pool.query(query, [pondId, temperature, doLevel]);
+  await pool.query(query, [pondId, temperature, doLevel, phLevel]);
   console.log(
-    `[Worker] Saved: pond=${pondId} temp=${temperature} do=${doLevel}`,
+    `[Worker] Saved: pond=${pondId} temp=${temperature} do=${doLevel} ph=${phLevel}`,
   );
 }
 
 // Save control log
 async function saveControlLog(
   pondId: number,
-  aerator: string,
+  action: string,
   source: string = "system",
 ): Promise<void> {
   const query = `
-    INSERT INTO control_log (pond_id, aerator, source, created_at)
+    INSERT INTO control_log (pond_id, action, source, created_at)
     VALUES ($1, $2, $3, NOW())
   `;
-  await pool.query(query, [pondId, aerator, source]);
+
+  try {
+    await pool.query(query, [pondId, action, source]);
+  } catch (err: unknown) {
+    // Backward compatibility for existing DBs that still use `aerator` column.
+    const pgErr = err as { code?: string };
+    if (pgErr?.code === "42703") {
+      await pool.query(
+        `INSERT INTO control_log (pond_id, aerator, source, created_at)
+         VALUES ($1, $2, $3, NOW())`,
+        [pondId, action, source],
+      );
+      return;
+    }
+    throw err;
+  }
 }
 
 async function main(): Promise<void> {
@@ -72,6 +89,7 @@ async function main(): Promise<void> {
     reconnectPeriod: 3000,
     connectTimeout: 10000,
   });
+  const limeStateByPond = new Map<number, "ON" | "OFF">();
 
   client.on("connect", () => {
     console.log("[Worker] Connected to MQTT broker");
@@ -98,32 +116,39 @@ async function main(): Promise<void> {
       }
 
       const payload = JSON.parse(message.toString());
-      const { temperature, do: doLevel } = payload;
+      const { temperature, do: doLevel, ph: phLevel } = payload;
 
       if (typeof temperature !== "number" || typeof doLevel !== "number") {
         console.error("[Worker] Invalid payload:", payload);
         return;
       }
 
-      // Save to database
-      await saveSensorData(pondId, temperature, doLevel);
+      // Save to database (ph may be null for backward compatibility)
+      await saveSensorData(pondId, temperature, doLevel, phLevel ?? null);
 
-      // Automation: if DO < 3, turn on aerator
-      if (doLevel < 3) {
-        const controlTopic = `pond/${pondId}/control`;
-        const controlPayload = JSON.stringify({ aerator: "ON" });
+      // Closed-loop pH control: lime ON below threshold, OFF when recovered.
+      if (typeof phLevel === "number") {
+        const currentLimeState = limeStateByPond.get(pondId) ?? "OFF";
+        const nextLimeState: "ON" | "OFF" =
+          phLevel < PH_LIME_THRESHOLD ? "ON" : "OFF";
 
-        client.publish(controlTopic, controlPayload, { qos: 1 }, (err) => {
-          if (err) {
-            console.error("[Worker] Control publish error:", err);
-          } else {
-            console.log(
-              `[Worker] ⚠️  LOW DO (${doLevel}) - Aerator ON for pond ${pondId}`,
-            );
-          }
-        });
+        if (currentLimeState !== nextLimeState) {
+          const controlTopic = `pond/${pondId}/control`;
+          const controlPayload = JSON.stringify({ lime: nextLimeState });
 
-        await saveControlLog(pondId, "ON", "system");
+          client.publish(controlTopic, controlPayload, { qos: 1 }, (err) => {
+            if (err) {
+              console.error("[Worker] Lime publish error:", err);
+            } else {
+              console.log(
+                `[Worker] pH ${phLevel.toFixed(2)} -> Lime ${nextLimeState} for pond ${pondId}`,
+              );
+            }
+          });
+
+          await saveControlLog(pondId, `LIME_${nextLimeState}`, "system");
+          limeStateByPond.set(pondId, nextLimeState);
+        }
       }
     } catch (err) {
       console.error("[Worker] Error processing message:", err);

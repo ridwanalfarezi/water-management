@@ -10,6 +10,11 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   /* ---- Design tokens: Neutral palette (Zinc) ---- */
+  --color-primary: #1457d4;
+  --color-primary-foreground: #ffffff;
+  --color-primary-dark: #023990;
+  --color-brand-accent: #cfe416;
+
   --color-background: #fafafa;
   --color-foreground: #09090b;
   --color-card: #ffffff;

@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AquaMonitor — Fish Farm Water Management",
+  title: "KolamPintar — Manajemen Air Kolam Ikan",
   description:
-    "Real-time water quality monitoring and automated aerator control for fish farming ponds",
+    "Pemantauan kualitas air real-time dan kontrol kapur berbasis pH untuk kolam budidaya ikan",
+  icons: {
+    icon: "/logo-pict.png",
+  },
 };
 
 export default function RootLayout({
@@ -13,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="id">
       <head>
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"

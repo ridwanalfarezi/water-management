@@ -4,14 +4,21 @@ import { useState, useEffect, useCallback } from "react";
 import { Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function AIInsightCard() {
+interface AIInsightCardProps {
+  pondId?: number;
+}
+
+export function AIInsightCard({ pondId }: AIInsightCardProps) {
   const [insight, setInsight] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchInsight = useCallback(async () => {
     try {
-      const res = await fetch("/api/ai-insight");
+      const url = pondId
+        ? `/api/ai-insight?pondId=${pondId}`
+        : "/api/ai-insight";
+      const res = await fetch(url);
       const json = await res.json();
 
       if (json.success) {
@@ -23,7 +30,7 @@ export function AIInsightCard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pondId]);
 
   useEffect(() => {
     fetchInsight();
@@ -41,10 +48,10 @@ export function AIInsightCard() {
           <Sparkles className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
         </div>
         <div className="flex items-center gap-2">
-          <CardTitle className="text-sm font-semibold">AI Insight</CardTitle>
+          <CardTitle className="text-sm font-semibold">Insight AI</CardTitle>
           {source && (
             <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-              {source === "ai" ? "Gemini" : "Auto"}
+              {source === "ai" ? "Gemini" : "Otomatis"}
             </span>
           )}
         </div>
