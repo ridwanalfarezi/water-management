@@ -64,57 +64,57 @@ services:
       - waternet
 
   # ─── IoT Simulator (Pond 1) ─────────────────────────────────
-  simulator:
-    build:
-      context: ./services/simulator
-      dockerfile: Dockerfile
-    container_name: wm-simulator
-    environment:
-      MQTT_URL: mqtt://emqx:1883
-      POND_ID: "1"
-    depends_on:
-      emqx:
-        condition: service_healthy
-    restart: on-failure
-    develop:
-      watch:
-        - action: sync+restart
-          path: ./services/simulator/src
-          target: /app/src
-    networks:
-      - waternet
+  # simulator:
+  #   build:
+  #     context: ./services/simulator
+  #     dockerfile: Dockerfile
+  #   container_name: wm-simulator
+  #   environment:
+  #     MQTT_URL: mqtt://emqx:1883
+  #     POND_ID: "1"
+  #   depends_on:
+  #     emqx:
+  #       condition: service_healthy
+  #   restart: on-failure
+  #   develop:
+  #     watch:
+  #       - action: sync+restart
+  #         path: ./services/simulator/src
+  #         target: /app/src
+  #   networks:
+  #     - waternet
 
   # ─── IoT Simulator (Pond 2) ─────────────────────────────────
-  simulator-2:
-    build:
-      context: ./services/simulator
-      dockerfile: Dockerfile
-    container_name: wm-simulator-2
-    environment:
-      MQTT_URL: mqtt://emqx:1883
-      POND_ID: "2"
-    depends_on:
-      emqx:
-        condition: service_healthy
-    restart: on-failure
-    networks:
-      - waternet
+  # simulator-2:
+  #   build:
+  #     context: ./services/simulator
+  #     dockerfile: Dockerfile
+  #   container_name: wm-simulator-2
+  #   environment:
+  #     MQTT_URL: mqtt://emqx:1883
+  #     POND_ID: "2"
+  #   depends_on:
+  #     emqx:
+  #       condition: service_healthy
+  #   restart: on-failure
+  #   networks:
+  #     - waternet
 
   # ─── IoT Simulator (Pond 3) ─────────────────────────────────
-  simulator-3:
-    build:
-      context: ./services/simulator
-      dockerfile: Dockerfile
-    container_name: wm-simulator-3
-    environment:
-      MQTT_URL: mqtt://emqx:1883
-      POND_ID: "3"
-    depends_on:
-      emqx:
-        condition: service_healthy
-    restart: on-failure
-    networks:
-      - waternet
+  # simulator-3:
+  #   build:
+  #     context: ./services/simulator
+  #     dockerfile: Dockerfile
+  #   container_name: wm-simulator-3
+  #   environment:
+  #     MQTT_URL: mqtt://emqx:1883
+  #     POND_ID: "3"
+  #   depends_on:
+  #     emqx:
+  #       condition: service_healthy
+  #   restart: on-failure
+  #   networks:
+  #     - waternet
 
   # ─── Next.js Web Dashboard ────────────────────────────────
   web:
