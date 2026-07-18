@@ -13,6 +13,7 @@ pgdata/
 .env
 .env.local
 .env*.local
+hardware/**/secrets.h
 
 # OS
 .DS_Store

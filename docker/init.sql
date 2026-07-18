@@ -1,11 +1,20 @@
 CREATE TABLE IF NOT EXISTS sensor_data (
   id SERIAL PRIMARY KEY,
   pond_id INTEGER NOT NULL,
-  temperature REAL NOT NULL,
-  do_level REAL NOT NULL,
+  temperature REAL,
+  do_level REAL,
   ph_level REAL,
+  solenoid_state VARCHAR(3),
+  control_mode VARCHAR(10),
+  rssi INTEGER,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE sensor_data ALTER COLUMN temperature DROP NOT NULL;
+ALTER TABLE sensor_data ALTER COLUMN do_level DROP NOT NULL;
+ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS solenoid_state VARCHAR(3);
+ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS control_mode VARCHAR(10);
+ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS rssi INTEGER;
 
 CREATE TABLE IF NOT EXISTS control_log (
   id SERIAL PRIMARY KEY,

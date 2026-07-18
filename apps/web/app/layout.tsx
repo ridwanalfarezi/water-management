@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "KolamPintar — Manajemen Air Kolam Ikan",
   description:
-    "Pemantauan kualitas air real-time dan kontrol kapur berbasis pH untuk kolam budidaya ikan",
+    "Pemantauan kualitas air real-time dan kontrol solenoid pH untuk kolam budidaya ikan",
   icons: {
     icon: "/logo-pict.png",
   },

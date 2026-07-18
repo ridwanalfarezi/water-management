@@ -6,9 +6,7 @@ const { Pool } = pg;
 const MQTT_URL = process.env.MQTT_URL || "mqtt://localhost:1883";
 const DATABASE_URL =
   process.env.DATABASE_URL || "postgres://user:password@localhost:5432/waterdb";
-const PH_LIME_THRESHOLD = 6.5;
 
-// PostgreSQL connection pool
 const pool = new Pool({
   connectionString: DATABASE_URL,
   max: 5,
@@ -16,15 +14,26 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
-// Test DB connection with retry
+type SolenoidState = "ON" | "OFF";
+type ControlMode = "AUTO" | "MANUAL";
+
+interface SensorPayload {
+  ph: number;
+  temperature?: number;
+  do?: number;
+  solenoid?: SolenoidState;
+  mode?: ControlMode;
+  rssi?: number;
+}
+
 async function waitForDatabase(retries = 10, delay = 3000): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
       const client = await pool.connect();
-      console.log("[Worker] Connected to PostgreSQL");
       client.release();
+      console.log("[Worker] Connected to PostgreSQL");
       return;
-    } catch (err) {
+    } catch {
       console.log(
         `[Worker] Waiting for PostgreSQL... attempt ${i + 1}/${retries}`,
       );
@@ -34,134 +43,133 @@ async function waitForDatabase(retries = 10, delay = 3000): Promise<void> {
   throw new Error("[Worker] Could not connect to PostgreSQL after retries");
 }
 
-// Save sensor data to database
+// Keep existing installations compatible with pH-only hardware telemetry.
+async function migrateDatabase(): Promise<void> {
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'control_log' AND column_name = 'aerator'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'control_log' AND column_name = 'action'
+      ) THEN
+        ALTER TABLE control_log RENAME COLUMN aerator TO action;
+      END IF;
+    END$$;
+    ALTER TABLE sensor_data ALTER COLUMN temperature DROP NOT NULL;
+    ALTER TABLE sensor_data ALTER COLUMN do_level DROP NOT NULL;
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS solenoid_state VARCHAR(3);
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS control_mode VARCHAR(10);
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS rssi INTEGER;
+  `);
+  console.log("[Worker] Database schema ready");
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function parseSensorPayload(value: unknown): SensorPayload | null {
+  if (!value || typeof value !== "object") return null;
+
+  const payload = value as Record<string, unknown>;
+  if (!isFiniteNumber(payload.ph) || payload.ph < 0 || payload.ph > 14) {
+    return null;
+  }
+  if (
+    payload.temperature !== undefined &&
+    !isFiniteNumber(payload.temperature)
+  ) {
+    return null;
+  }
+  if (payload.do !== undefined && !isFiniteNumber(payload.do)) return null;
+
+  const solenoid =
+    payload.solenoid === "ON" || payload.solenoid === "OFF"
+      ? payload.solenoid
+      : undefined;
+  const mode =
+    payload.mode === "AUTO" || payload.mode === "MANUAL"
+      ? payload.mode
+      : undefined;
+
+  return {
+    ph: payload.ph,
+    temperature: payload.temperature as number | undefined,
+    do: payload.do as number | undefined,
+    solenoid,
+    mode,
+    rssi: isFiniteNumber(payload.rssi) ? Math.round(payload.rssi) : undefined,
+  };
+}
+
 async function saveSensorData(
   pondId: number,
-  temperature: number,
-  doLevel: number,
-  phLevel: number | null,
+  payload: SensorPayload,
 ): Promise<void> {
-  const query = `
-    INSERT INTO sensor_data (pond_id, temperature, do_level, ph_level, created_at)
-    VALUES ($1, $2, $3, $4, NOW())
-  `;
-  await pool.query(query, [pondId, temperature, doLevel, phLevel]);
+  await pool.query(
+    `INSERT INTO sensor_data
+       (pond_id, temperature, do_level, ph_level, solenoid_state, control_mode, rssi, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+    [
+      pondId,
+      payload.temperature ?? null,
+      payload.do ?? null,
+      payload.ph,
+      payload.solenoid ?? null,
+      payload.mode ?? null,
+      payload.rssi ?? null,
+    ],
+  );
+
   console.log(
-    `[Worker] Saved: pond=${pondId} temp=${temperature} do=${doLevel} ph=${phLevel}`,
+    `[Worker] Saved pond=${pondId} ph=${payload.ph.toFixed(2)} solenoid=${payload.solenoid ?? "unknown"} mode=${payload.mode ?? "unknown"}`,
   );
 }
 
-// Save control log
-async function saveControlLog(
-  pondId: number,
-  action: string,
-  source: string = "system",
-): Promise<void> {
-  const query = `
-    INSERT INTO control_log (pond_id, action, source, created_at)
-    VALUES ($1, $2, $3, NOW())
-  `;
-
-  try {
-    await pool.query(query, [pondId, action, source]);
-  } catch (err: unknown) {
-    // Backward compatibility for existing DBs that still use `aerator` column.
-    const pgErr = err as { code?: string };
-    if (pgErr?.code === "42703") {
-      await pool.query(
-        `INSERT INTO control_log (pond_id, aerator, source, created_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [pondId, action, source],
-      );
-      return;
-    }
-    throw err;
-  }
-}
-
 async function main(): Promise<void> {
-  // Wait for database to be ready
   await waitForDatabase();
+  await migrateDatabase();
 
   console.log(`[Worker] Connecting to MQTT at ${MQTT_URL}...`);
-
   const client = mqtt.connect(MQTT_URL, {
     reconnectPeriod: 3000,
     connectTimeout: 10000,
   });
-  const limeStateByPond = new Map<number, "ON" | "OFF">();
 
   client.on("connect", () => {
     console.log("[Worker] Connected to MQTT broker");
-
-    // Subscribe to all pond sensor topics
     client.subscribe("pond/+/sensor", { qos: 1 }, (err) => {
-      if (err) {
-        console.error("[Worker] Subscribe error:", err);
-      } else {
-        console.log("[Worker] Subscribed to pond/+/sensor");
-      }
+      if (err) console.error("[Worker] Subscribe error:", err);
+      else console.log("[Worker] Subscribed to pond/+/sensor");
     });
   });
 
   client.on("message", async (topic: string, message: Buffer) => {
     try {
-      // Parse topic: pond/{pondId}/sensor
-      const parts = topic.split("/");
-      const pondId = parseInt(parts[1], 10);
+      const match = topic.match(/^pond\/(\d+)\/sensor$/);
+      if (!match) return;
 
-      if (isNaN(pondId)) {
-        console.error(`[Worker] Invalid pondId in topic: ${topic}`);
+      const pondId = Number.parseInt(match[1], 10);
+      if (pondId <= 0) return;
+      const payload = parseSensorPayload(JSON.parse(message.toString()));
+      if (!payload) {
+        console.error(`[Worker] Invalid sensor payload on ${topic}`);
         return;
       }
 
-      const payload = JSON.parse(message.toString());
-      const { temperature, do: doLevel, ph: phLevel } = payload;
-
-      if (typeof temperature !== "number" || typeof doLevel !== "number") {
-        console.error("[Worker] Invalid payload:", payload);
-        return;
-      }
-
-      // Save to database (ph may be null for backward compatibility)
-      await saveSensorData(pondId, temperature, doLevel, phLevel ?? null);
-
-      // Closed-loop pH control: lime ON below threshold, OFF when recovered.
-      if (typeof phLevel === "number") {
-        const currentLimeState = limeStateByPond.get(pondId) ?? "OFF";
-        const nextLimeState: "ON" | "OFF" =
-          phLevel < PH_LIME_THRESHOLD ? "ON" : "OFF";
-
-        if (currentLimeState !== nextLimeState) {
-          const controlTopic = `pond/${pondId}/control`;
-          const controlPayload = JSON.stringify({ lime: nextLimeState });
-
-          client.publish(controlTopic, controlPayload, { qos: 1 }, (err) => {
-            if (err) {
-              console.error("[Worker] Lime publish error:", err);
-            } else {
-              console.log(
-                `[Worker] pH ${phLevel.toFixed(2)} -> Lime ${nextLimeState} for pond ${pondId}`,
-              );
-            }
-          });
-
-          await saveControlLog(pondId, `LIME_${nextLimeState}`, "system");
-          limeStateByPond.set(pondId, nextLimeState);
-        }
-      }
-    } catch (err) {
-      console.error("[Worker] Error processing message:", err);
+      await saveSensorData(pondId, payload);
+    } catch (error) {
+      console.error(`[Worker] Error processing ${topic}:`, error);
     }
   });
 
-  client.on("error", (err) => {
-    console.error("[Worker] MQTT error:", err);
-  });
-
-  client.on("reconnect", () => {
-    console.log("[Worker] Reconnecting to MQTT...");
-  });
+  client.on("error", (err) => console.error("[Worker] MQTT error:", err));
+  client.on("reconnect", () =>
+    console.log("[Worker] Reconnecting to MQTT..."),
+  );
 }
 
 main().catch(console.error);

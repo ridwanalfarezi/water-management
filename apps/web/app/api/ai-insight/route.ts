@@ -8,8 +8,8 @@ let lastQuotaLogAt = 0;
 
 interface SensorRow {
   pond_id: number;
-  temperature: number;
-  do_level: number;
+  temperature: number | null;
+  do_level: number | null;
   ph_level: number | null;
   created_at: Date;
 }
@@ -19,9 +19,10 @@ const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI ahli akuakultur.
 Kamu diberikan data kualitas air terbaru dari kolam ikan. Tugasmu adalah menganalisis data dan memberikan rekomendasi singkat dan praktis untuk petani.
 
 Aturan:
-- Fokus utama analisis adalah pH untuk kontrol kapur otomatis
-- Jika pH < 6.5 → jelaskan bahwa aktuator kapur otomatis sedang/akan aktif
-- Jika pH >= 6.5 → sampaikan kondisi pH aman
+- Fokus utama analisis adalah pH untuk kontrol solenoid asam otomatis
+- Jika pH > 7.5 → jelaskan bahwa solenoid otomatis sedang/akan terbuka untuk menurunkan pH
+- Jika pH < 6.5 → jelaskan bahwa solenoid asam harus tetap tertutup dan perlu pemeriksaan manual
+- Jika pH 6.5–7.5 → sampaikan kondisi pH aman
 - Selalu berikan saran yang bisa langsung dilakukan
 
 Format respons:
@@ -60,7 +61,7 @@ ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan sistem: jika pH < 6.5 maka aktuator kapur otomatis ON
+Aturan sistem: jika pH > 7.5 maka solenoid asam otomatis ON dan OFF setelah pH < 7.3
 
 Analisis dan beri saran.`;
 }
@@ -243,21 +244,25 @@ function generateFallbackInsight(rows: SensorRow[]): string {
 
   if (latest.ph_level === null) {
     parts.push(
-      "Data pH belum tersedia. Pastikan sensor pH aktif agar kontrol kapur otomatis berjalan.",
+      "Data pH belum tersedia. Pastikan sensor pH aktif agar kontrol solenoid otomatis berjalan.",
+    );
+  } else if (latest.ph_level > 7.5) {
+    parts.push(
+      `pH saat ini ${latest.ph_level.toFixed(1)}. Solenoid otomatis dibuka untuk menurunkan pH.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)}. Aktuator kapur otomatis sedang diaktifkan untuk menaikkan pH.`,
+      `pH saat ini ${latest.ph_level.toFixed(1)} dan terlalu rendah. Solenoid asam tetap tertutup; periksa air secara manual.`,
     );
   } else {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang aman. Aktuator kapur tetap siaga.`,
+      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang aman. Solenoid tetap siaga.`,
     );
   }
 
   if (newerAvg < olderAvg - 0.1) {
     parts.push(
-      `Tren pH cenderung menurun. Pantau lebih sering agar koreksi kapur tidak terlambat.`,
+      `Tren pH cenderung menurun. Pastikan solenoid tertutup jika pH mendekati batas bawah.`,
     );
   } else if (newerAvg > olderAvg + 0.1) {
     parts.push(`Tren pH membaik. Pertahankan pemantauan rutin.`);

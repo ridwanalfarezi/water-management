@@ -35,6 +35,8 @@ const statusConfig = {
 
 export function PondCard({ pondId, phLevel, status }: PondCardProps) {
   const cfg = statusConfig[status];
+  const phOutsideTarget =
+    phLevel !== null && (phLevel < 6.5 || phLevel > 7.5);
 
   return (
     <Link href={`/kolam/${pondId}`} className="block group">
@@ -58,10 +60,10 @@ export function PondCard({ pondId, phLevel, status }: PondCardProps) {
         <div className="grid grid-cols-1 gap-3">
           <div className="flex flex-col items-center gap-1 rounded-lg bg-white/60 p-3">
             <FlaskConical
-              className={`h-4 w-4 ${phLevel !== null && phLevel < 6.5 ? "text-amber-500" : "text-zinc-500"}`}
+              className={`h-4 w-4 ${phOutsideTarget ? "text-amber-500" : "text-zinc-500"}`}
             />
             <span
-              className={`text-lg font-bold ${phLevel !== null && phLevel < 6.5 ? "text-amber-600" : "text-zinc-900"}`}
+              className={`text-lg font-bold ${phOutsideTarget ? "text-amber-600" : "text-zinc-900"}`}
             >
               {phLevel?.toFixed(1) ?? "--"}
             </span>

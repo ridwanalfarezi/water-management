@@ -8,8 +8,8 @@ let lastQuotaLogAt = 0;
 
 interface SensorRow {
   pond_id: number;
-  temperature: number;
-  do_level: number;
+  temperature: number | null;
+  do_level: number | null;
   ph_level: number | null;
   created_at: Date;
 }
@@ -19,9 +19,10 @@ const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI ahli akuakultur.
 Kamu diberikan data kualitas air terbaru dari kolam ikan. Tugasmu adalah menganalisis data dan memberikan ringkasan kondisi kolam dalam bahasa Indonesia yang sederhana.
 
 Aturan:
-- Fokuskan ringkasan pada pH dan kondisi kontrol kapur otomatis
-- Jika pH < 6.5 → jelaskan kapur otomatis aktif
-- Jika pH >= 6.5 → jelaskan pH aman
+- Fokuskan ringkasan pada pH dan kondisi kontrol solenoid asam otomatis
+- Jika pH > 7.5 → jelaskan solenoid otomatis terbuka untuk menurunkan pH
+- Jika pH < 6.5 → jelaskan solenoid harus tertutup dan perlu pemeriksaan manual
+- Jika pH 6.5–7.5 → jelaskan pH aman
 - Selalu berikan saran yang bisa langsung dilakukan
 - Gunakan bahasa yang sederhana, bisa dipahami petani
 
@@ -60,7 +61,7 @@ ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan sistem: pH < 6.5 => aktuator kapur otomatis ON
+Aturan sistem: pH > 7.5 => solenoid asam otomatis ON; pH < 7.3 => OFF
 
 Berikan ringkasan kondisi harian dalam 2-3 kalimat bahasa Indonesia.`;
 }
@@ -220,11 +221,15 @@ function generateFallbackSummary(rows: SensorRow[], pondId: number): string {
 
   if (latest.ph_level === null) {
     parts.push(
-      `Data pH Kolam ${pondId} belum tersedia. Pastikan sensor pH aktif agar kontrol kapur otomatis berjalan.`,
+      `Data pH Kolam ${pondId} belum tersedia. Pastikan sensor pH aktif agar kontrol solenoid otomatis berjalan.`,
+    );
+  } else if (latest.ph_level > 7.5) {
+    parts.push(
+      `pH Kolam ${pondId} naik ke ${latest.ph_level.toFixed(1)}. Sistem membuka solenoid otomatis untuk menurunkannya.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH Kolam ${pondId} turun ke ${latest.ph_level.toFixed(1)}. Sistem mengaktifkan aktuator kapur otomatis untuk koreksi.`,
+      `pH Kolam ${pondId} turun ke ${latest.ph_level.toFixed(1)}. Solenoid asam tetap tertutup dan kondisi air perlu diperiksa.`,
     );
   } else {
     parts.push(

@@ -1,203 +1,116 @@
-# AquaMonitor — Intelligent Water Management for Fish Farming
+# KolamPintar
 
-Fish die silently. Oxygen levels drop in the middle of the night, temperatures shift during monsoon season, and by the time a farmer notices something is wrong, it's already too late. In Indonesia alone, aquaculture losses from poor water quality cost farmers millions annually — and most of these losses are preventable.
+KolamPintar monitors pond pH from a physical ESP32 and controls an acid-dosing solenoid. Automatic hysteresis runs on the ESP32, so pH control continues if Wi-Fi, MQTT, or the web server becomes unavailable.
 
-AquaMonitor is a monitoring and automation system that watches dissolved oxygen (DO) and temperature in fish ponds around the clock. When conditions deteriorate, it acts — activating aerators automatically and alerting farmers before fish start dying. It also uses AI to read sensor trends and provide plain-language recommendations, so farmers don't need to interpret raw numbers themselves.
+## Architecture
 
-The entire system runs from a single command: `docker compose up --build`.
-
----
-
-## Why This Matters
-
-Most small-scale fish farmers rely on manual observation. They check their ponds a few times a day, maybe test the water once a week. But water quality can change in minutes — a sudden algae bloom, a cloudy afternoon that reduces photosynthesis, or a hot night that spikes oxygen demand.
-
-Existing solutions either cost too much (commercial monitoring rigs run thousands of dollars), require stable internet (which rural ponds rarely have), or produce data that's hard to interpret without technical training.
-
-AquaMonitor is built for these constraints. It's designed around the reality that many aquaculture operations are in remote areas, on tight budgets, with unreliable connectivity. The system uses MQTT — a lightweight protocol originally built for oil pipeline monitoring over satellite links — specifically because it handles intermittent connections gracefully. And the dashboard is simple enough that you don't need to understand what "dissolved oxygen saturation percentage" means to know your fish are in trouble.
-
----
-
-## Who It's For
-
-This system is aimed at small to mid-scale fish farmers — the kind of operations running a handful of ponds, maybe a couple of hectares of water. People who can't afford a full-time water quality technician but can't afford to lose a harvest either.
-
-It's also relevant for aquaculture cooperatives, agricultural extension programs, and university research groups studying pond ecosystems. Anyone who needs reliable, continuous water monitoring without enterprise pricing.
-
----
-
-## Where and When It Operates
-
-AquaMonitor is built for outdoor pond environments. The kind of places where you'd find catfish, tilapia, or shrimp farming — often in rural areas with inconsistent power and spotty cell coverage.
-
-The system runs continuously. It collects sensor readings every 5 seconds, which matters because critical events (oxygen crashes, thermal stratification) can develop rapidly. The automation logic doesn't depend on a human being awake or nearby — if DO drops below 3 mg/L at 3 AM, the aerator kicks on regardless.
-
----
-
-## How It Works
-
-The data pipeline is straightforward, and that's intentional. Fewer moving parts means fewer things that break at 2 AM.
-
-```
-IoT Sensor → MQTT Broker → Worker → PostgreSQL → Dashboard
-                                                  ↕
-                                              Gemini AI
+```text
+ESP32 pH sensor
+  ├─ local automatic solenoid control
+  └─ MQTT telemetry ──> EMQX ──> worker ──> PostgreSQL ──> Next.js dashboard
+                         ^                                  │
+                         └──────── dashboard commands ──────┘
 ```
 
-**1. Sensor devices** sit at the pond and measure temperature and dissolved oxygen. In this prototype, a simulator generates realistic data with occasional DO drops to mimic real-world stress events — about 20% of readings simulate low-oxygen conditions.
+The ESP32 publishes every five seconds. The worker validates and stores the readings, while the dashboard displays pH, the applied solenoid state, control mode, Wi-Fi signal, and device availability.
 
-**2. MQTT broker (EMQX)** receives sensor data over structured topics like `pond/1/sensor`. MQTT was chosen over HTTP because it's built for unreliable networks — messages can queue when connectivity drops and deliver when it returns. The QoS guarantees matter when you're running on a 3G modem in a rice field.
+## Services
 
-**3. Worker service** subscribes to all pond sensor topics, parses incoming data, and writes it to PostgreSQL. It also runs the first layer of automation: if dissolved oxygen drops below 3 mg/L, it immediately publishes an aerator-ON command back through MQTT. No API call, no dashboard involvement — the decision happens at the edge of the pipeline.
+| Service | Purpose | Host port |
+|---|---|---:|
+| PostgreSQL 15 | Sensor readings, control logs, and journal | `5432` |
+| EMQX 5.8 | MQTT communication with ESP32 devices | `1883` |
+| Worker | MQTT validation and database ingestion | — |
+| Next.js | Dashboard and control API | `3000` |
+| EMQX dashboard | Broker administration | `18083` |
 
-**4. PostgreSQL** stores every sensor reading and every control action. Nothing fancy here — two tables, clean schemas, parameterized queries. The database runs an init script automatically on first boot so there's zero manual setup.
+## Start the server
 
-**5. Next.js dashboard** pulls the latest 20 readings every 5 seconds and renders them as interactive line charts. Farmers see temperature and DO trending over time, with a clear red reference line at the critical 3.0 mg/L threshold. Status cards show current values at a glance, and manual override buttons let farmers control the aerator directly.
+Requirements: Docker Desktop with Docker Compose.
 
-**6. Gemini AI** analyzes the same sensor data and generates plain-language insights every 15 seconds. Instead of telling a farmer "DO is 2.7 mg/L with a negative first-derivative over the trailing window," it says something like: "Oxygen levels are dropping and may become unsafe soon. It is recommended to turn on the aerator to prevent stress on the fish." The AI uses Google's Gemini 2.5 Flash-Lite model, which is available on a free tier — no credit card or billing account needed.
-
-If the Gemini API key isn't configured or the service is temporarily unreachable, the system falls back to rule-based analysis that computes trends locally. The AI is an enhancement, not a dependency.
-
----
-
-## Key Features
-
-**Real-time monitoring** — Sensor data streams in every 5 seconds. The dashboard auto-refreshes without page reloads, and a live indicator in the header confirms the connection is active.
-
-**Automated aerator control** — When DO drops below 3 mg/L, the worker service publishes a control command through MQTT within the same processing cycle. No human intervention required. This is the feature that saves fish.
-
-**AI-powered insights** — Gemini analyzes the last 20 readings and returns a short recommendation in farmer-friendly language. It detects declining trends before they hit critical levels, giving farmers time to act rather than react.
-
-**Manual override** — Two buttons. Aerator ON, aerator OFF. Sometimes a farmer knows something the sensors don't — maybe they just fed the fish (which increases oxygen demand) or they're about to harvest. Manual control is always available.
-
-**Alert system** — A prominent status panel shifts from green ("System Normal") to red ("Critical Oxygen Level") with a clear explanation of what's happening and what to do about it.
-
----
-
-## Tech Stack
-
-Every choice here was made for a reason.
-
-| Component | Technology | Why |
-|-----------|-----------|-----|
-| Dashboard & API | **Next.js 16** (App Router) | Server-side rendering for fast first paint, API routes colocated with the frontend — one deployment instead of two |
-| Database | **PostgreSQL 15** | Battle-tested, handles time-series sensor data well enough at this scale, zero configuration with Docker |
-| Message broker | **EMQX 5.8** | Production-grade MQTT broker with built-in clustering, dashboard, and health monitoring |
-| Worker & Simulator | **Bun + TypeScript** | Fast startup time matters in containers, native TypeScript execution without a build step |
-| AI | **Google Gemini 2.5 Flash-Lite** | Free tier with 1,000 requests/day — enough for continuous monitoring without any cost |
-| Charts | **Recharts** | Composable React components for the chart, plays well with Next.js and SSR |
-| Infrastructure | **Docker Compose** | Single command deployment, consistent environments, no "works on my machine" problems |
-
-The worker and simulator run on Bun for its fast cold-start time — when a container restarts, it's back up in under a second. The web dashboard uses Node.js (via Bun) for Next.js compatibility in production builds.
-
----
-
-## Getting Started
-
-You need Docker and Docker Compose installed. That's it.
-
-**1. Clone and enter the project:**
-```bash
-git clone <repository-url>
-cd water-management
-```
-
-**2. (Optional) Add your Gemini API key:**
-
-Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey), then create a `.env` file:
-
-```
-GEMINI_API_KEY=your-key-here
-```
-
-Without this, the AI insight card will show rule-based analysis instead of Gemini responses. Everything else works fine.
-
-**3. Start the system:**
-```bash
+```powershell
 docker compose up --build
 ```
 
-Five containers will start: PostgreSQL, EMQX, the worker, the simulator, and the web dashboard. Health checks ensure services come up in the right order.
+Open:
 
-**4. Open the dashboard:**
+- Dashboard: <http://localhost:3000>
+- EMQX administration: <http://localhost:18083>
 
-Navigate to [http://localhost:3000](http://localhost:3000). Data should appear within 10 seconds as the simulator begins publishing readings.
+The pond list remains empty until a configured physical ESP32 publishes its first reading.
 
-**For development with hot-reload:**
-```bash
-docker compose up --build --watch
+An optional Gemini key can be placed in `.env`:
+
+```dotenv
+GEMINI_API_KEY=your-key-here
 ```
 
-Changes to source files will sync into running containers automatically.
+Without it, the application uses its built-in rule-based pH insights.
 
----
+## Connect the ESP32
 
-## Demo Walkthrough
+The upload-ready sketch and detailed setup instructions are in [`hardware/esp32-kolampintar`](hardware/esp32-kolampintar/README.md).
 
-If you're presenting this system, here's a good flow to follow:
+In short:
 
-**Step 1 — Start the system.** Run `docker compose up --build` and open the dashboard. Point out that all five services start from a single command and connect automatically through Docker's internal network.
+1. Install the ESP32 board package, PubSubClient, ArduinoJson, and LiquidCrystal I2C in Arduino IDE.
+2. Copy `hardware/esp32-kolampintar/secrets.example.h` to `secrets.h`.
+3. Enter the Wi-Fi credentials and the server computer's LAN IP in `secrets.h`.
+4. Verify `POND_ID`, pH calibration voltages, pins, and relay polarity in the sketch.
+5. Upload the sketch and watch its Serial Monitor at 115200 baud.
 
-**Step 2 — Observe normal operation.** The chart will show temperature hovering around 25–32°C and DO fluctuating between 4–8 mg/L. The status panel is green. The AI insight card will report stable conditions. This is the baseline.
+Do not use `localhost` as `MQTT_HOST` on the ESP32. Both devices must be reachable on the same network, and TCP port 1883 must be allowed through the server firewall.
 
-**Step 3 — Wait for a DO drop.** The simulator is configured to produce low-DO readings (below 3 mg/L) roughly 20% of the time. Within a minute or two, you'll see DO dip below the red reference line on the chart.
+## MQTT contract
 
-**Step 4 — Observe the automation.** When DO drops below 3, three things happen simultaneously: the alert banner turns red with an explanation, the aerator status card switches to "ON" with a spinning icon, and the worker logs will show the control command being published via MQTT.
+For pond 1:
 
-**Step 5 — Check the AI insight.** The AI card will update within 15 seconds. Instead of stable conditions, it now warns about declining oxygen and recommends aerator activation. If you're using the Gemini API, the language will be more nuanced; the rule-based fallback is more formulaic but still accurate.
+| Direction | Topic |
+|---|---|
+| ESP32 to server | `pond/1/sensor` |
+| Dashboard to ESP32 | `pond/1/control` |
+| ESP32 availability | `pond/1/status` |
 
-**Step 6 — Demonstrate manual control.** Click "Turn OFF" to override the aerator, then "Turn ON" again. Each command is published through the same MQTT pipeline as the automated controls and logged in the database.
+Telemetry:
 
----
-
-## Project Structure
-
-```
-water-management/
-├── docker-compose.yml          # Orchestrates all 5 services
-├── docker/
-│   └── init.sql                # PostgreSQL schema (auto-runs on first boot)
-├── apps/
-│   ├── web/                    # Next.js dashboard + API
-│   │   ├── app/
-│   │   │   ├── page.tsx        # Main dashboard (charts, cards, controls)
-│   │   │   └── api/
-│   │   │       ├── data/       # GET — latest 20 sensor readings
-│   │   │       ├── control/    # POST — manual aerator commands
-│   │   │       └── ai-insight/ # GET — Gemini-powered analysis
-│   │   ├── components/         # Reusable UI components
-│   │   └── lib/                # DB pool, MQTT client, utilities
-│   └── worker/                 # MQTT subscriber + automation logic
-│       └── src/index.ts
-└── services/
-    └── simulator/              # Simulated IoT sensor device
-        └── src/index.ts
+```json
+{"ph":7.62,"solenoid":"ON","mode":"AUTO","rssi":-51}
 ```
 
----
+Dashboard commands:
 
-## Limitations and Future Improvements
+```json
+{"mode":"AUTO"}
+{"mode":"MANUAL","solenoid":"ON"}
+{"mode":"MANUAL","solenoid":"OFF"}
+```
 
-This is a prototype, and it's honest about what it doesn't do yet.
+Temperature and dissolved oxygen fields remain optional if they are added to future hardware.
 
-**Current limitations:**
+## Control behavior
 
-- The IoT device is simulated. Real deployment would require integrating with actual DO and temperature probes (something like an Atlas Scientific sensor kit connected to an ESP32).
-- Only one pond is supported in the current UI. The backend already handles multi-pond topics (`pond/+/sensor`), but the dashboard is hardcoded to Pond 1.
-- The AI insight refreshes on a timer rather than being triggered by events. A smarter approach would be to generate insights only when conditions change significantly.
-- There's no authentication. Any user on the network can access the dashboard and control the aerator.
-- Historical data is stored but not yet surfaced — there's no way to look at last week's trends or export data for analysis.
+- `AUTO`: solenoid opens above pH 7.5 and closes below pH 7.3.
+- `MANUAL ON`: solenoid opens immediately, then returns to automatic mode after 60 seconds.
+- `MANUAL OFF`: solenoid closes and remains in manual mode until `AUTO` is selected.
+- Boot behavior: relay starts OFF.
+- Network loss: local automatic control continues.
 
-**What comes next:**
+Test manual opening with the dosing line disconnected or using a harmless liquid before connecting acid. Confirm the relay polarity and normally-open/normally-closed plumbing behavior physically.
 
-- **Multi-pond support** — Selector in the dashboard to switch between ponds, with per-pond alerting and control.
-- **Predictive alerts** — Using the AI to forecast DO drops before they happen, based on temperature trends, time of day, and historical patterns.
-- **Hardware integration** — A reference design for an ESP32-based sensor node with MQTT publishing, suitable for actual field deployment.
-- **Mobile notifications** — Push alerts via LINE or WhatsApp when DO enters the danger zone, for farmers who aren't watching the dashboard.
-- **Data export and reporting** — CSV export, daily/weekly summary reports, and longer-term trend visualization.
+## Useful commands
 
----
+```powershell
+# Service status
+docker compose ps
 
-## License
+# Watch physical telemetry reach the database worker
+docker compose logs -f worker
 
-MIT
+# Restart after source changes
+docker compose up -d --build
+
+# Stop services without deleting stored readings
+docker compose down
+```
+
+See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) for calibration, multi-pond setup, API commands, and troubleshooting.

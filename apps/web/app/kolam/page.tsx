@@ -7,8 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 
 interface PondData {
   pond_id: number;
-  temperature: number;
-  do_level: number;
+  temperature: number | null;
+  do_level: number | null;
   ph_level: number | null;
   created_at: string;
   status: "normal" | "peringatan" | "kritis";
@@ -137,7 +137,7 @@ export default function SemuaKolamPage() {
             <Droplets className="h-12 w-12 mx-auto mb-4 opacity-30" />
             <p className="text-sm font-medium">Menunggu data kolam...</p>
             <p className="text-xs mt-1">
-              Data akan muncul dalam beberapa detik setelah simulator berjalan.
+              Data akan muncul setelah ESP32 terhubung ke MQTT.
             </p>
           </div>
         ) : (

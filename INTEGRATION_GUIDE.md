@@ -1,823 +1,282 @@
-# Integration Guide — AquaMonitor Water Management System
+# Physical ESP32 Integration Guide
 
-This guide is for integrating a physical prototype (IoT sensor hardware) with this project. By the end, your hardware will be publishing real sensor data into the dashboard instead of the built-in simulators.
+This guide connects the KolamPintar ESP32 pH controller directly to the web application through MQTT.
 
----
+## 1. Data flow
 
-## Table of Contents
-
-1. [What You Need](#1-what-you-need)
-2. [Cloning the Repository](#2-cloning-the-repository)
-3. [Environment Setup](#3-environment-setup)
-4. [Running the Application](#4-running-the-application)
-5. [Understanding the Architecture](#5-understanding-the-architecture)
-6. [How to Integrate Your Prototype](#6-how-to-integrate-your-prototype)
-7. [Switching from Simulators to Real Hardware](#7-switching-from-simulators-to-real-hardware)
-8. [API Reference](#8-api-reference)
-9. [Database Schema](#9-database-schema)
-10. [Verifying Your Integration](#10-verifying-your-integration)
-11. [Troubleshooting](#11-troubleshooting)
-
----
-
-## 1. What You Need
-
-### Required Software
-
-| Tool | Version | Purpose | Download |
-|------|---------|---------|----------|
-| **Git** | Any recent | Clone the repo | https://git-scm.com/downloads |
-| **Docker Desktop** | 4.x+ | Run all services | https://www.docker.com/products/docker-desktop |
-| **Docker Compose** | Included in Docker Desktop | Orchestrate containers | (bundled with Docker Desktop) |
-
-> **Note:** Docker Desktop already includes Docker Compose. You do **not** need to install them separately.
-
-### Optional (for local development outside Docker)
-
-| Tool | Purpose | Download |
-|------|---------|----------|
-| **Bun** | Run worker/simulator locally | https://bun.sh |
-| **Node.js 20+** | Run the web app locally | https://nodejs.org |
-| **DBeaver / pgAdmin** | Browse the PostgreSQL database | https://dbeaver.io |
-| **MQTTX** | Debug MQTT messages visually | https://mqttx.app |
-
-### For Your Prototype Hardware
-
-Your device (ESP32, Raspberry Pi, Arduino + WiFi, etc.) must be able to:
-
-- Connect to a WiFi/LAN network
-- Publish MQTT messages (most microcontrollers support this via a library)
-
----
-
-## 2. Cloning the Repository
-
-Open a terminal (PowerShell, Command Prompt, or Terminal) and run:
-
-```bash
-git clone https://github.com/ridwanalfarezi/water-management.git
-cd water-management
+```text
+pH probe -> ESP32 -> pond/{id}/sensor -> EMQX -> worker -> PostgreSQL -> dashboard
+                      pond/{id}/control <- EMQX <- control API <- dashboard
 ```
 
-Your folder structure will look like this:
+The ESP32 owns automatic pH control. The server stores telemetry and sends explicit operator commands; it does not duplicate the automatic dosing decision.
 
-```
-water-management/
-├── apps/
-│   ├── web/          ← Next.js dashboard + API
-│   └── worker/       ← MQTT subscriber + automation logic
-├── services/
-│   └── simulator/    ← Fake IoT sensor (replace with your hardware)
-├── docker/
-│   └── init.sql      ← Database schema (auto-applied on first run)
-├── docker-compose.yml
-├── .env.example
-└── .env              ← You'll create this in the next step
-```
+## 2. Start the server stack
 
----
+From the repository root:
 
-## 3. Environment Setup
-
-### 3.1 Create your `.env` file
-
-Copy the example file:
-
-```bash
-# Windows (PowerShell)
-Copy-Item .env.example .env
-
-# Mac / Linux
-cp .env.example .env
-```
-
-### 3.2 Edit `.env`
-
-Open `.env` in any text editor. It looks like this:
-
-```env
-# Google Gemini API (Optional — for AI insights on the dashboard)
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash-lite
-```
-
-- `GEMINI_API_KEY` is **optional**. The dashboard will show rule-based analysis if you leave it blank. If you want AI-powered insights, get a free key at https://aistudio.google.com/apikey and paste it here.
-- `GEMINI_MODEL` — leave as-is unless you want to change the model.
-
-### 3.3 Database credentials
-
-The database credentials are already configured in `docker-compose.yml` and do not need to be changed for local use:
-
-| Setting | Value |
-|---------|-------|
-| Host | `localhost:5432` (from host) / `postgres:5432` (between containers) |
-| Database | `waterdb` |
-| Username | `user` |
-| Password | `password` |
-
----
-
-## 4. Running the Application
-
-### First run (builds Docker images — takes a few minutes)
-
-```bash
+```powershell
 docker compose up --build
-```
-
-### Subsequent runs
-
-```bash
-docker compose up
-```
-
-### Stop everything
-
-```bash
-docker compose down
-```
-
-### Check logs for a specific service
-
-```bash
-docker compose logs -f worker      # Watch the automation worker
-docker compose logs -f web         # Watch the web dashboard
-docker compose logs -f simulator   # Watch simulated sensor data
-```
-
-### Access the running application
-
-| Interface | URL | Purpose |
-|-----------|-----|---------|
-| **Dashboard** | http://localhost:3000 | Main monitoring UI |
-| **EMQX Admin Panel** | http://localhost:18083 | View MQTT broker activity (login: `admin` / `public`) |
-| **PostgreSQL** | `localhost:5432` | Connect with DBeaver/pgAdmin if needed |
-
----
-
-## 5. Understanding the Architecture
-
-```
-Your Hardware / Prototype
-        │
-        │  MQTT publish
-        │  Topic: pond/{id}/sensor
-        │  Payload: {"temperature": 28.5, "do": 5.2, "ph": 7.1}
-        ▼
-┌─────────────────────────────────────────┐
-│        EMQX MQTT Broker :1883           │  ← Message bus
-└─────────────────────────────────────────┘
-        │                    │
-        │ subscribe          │ subscribe
-        ▼                    ▼
-┌──────────────┐    ┌──────────────────────┐
-│   Worker     │    │  Web Dashboard API   │
-│  (Bun)       │    │  (Next.js)           │
-│              │    │                      │
-│ 1. Save to   │    │ Serves browser UI    │
-│    database  │    │ and REST API         │
-│ 2. Auto lime │    └──────────────────────┘
-│    control   │              │
-└──────────────┘              │ SQL
-        │                     │
-        │ SQL                 ▼
-        ▼          ┌──────────────────────┐
-        └─────────►│   PostgreSQL :5432   │
-                   │   (waterdb)          │
-                   └──────────────────────┘
-                              │
-                              │ REST API fetch
-                              ▼
-                   ┌──────────────────────┐
-                   │   Browser / React    │
-                   │   Live Dashboard     │
-                   └──────────────────────┘
-```
-
-**Data flow in plain English:**
-
-1. Your hardware reads pH, temperature, and dissolved oxygen (DO) from sensors
-2. It publishes a JSON message to the MQTT broker running on port `1883`
-3. The **worker** picks up the message, saves it to the database, and triggers automatic lime control if pH is low
-4. The **web dashboard** polls the database every 5 seconds and displays live charts
-
----
-
-## 6. How to Integrate Your Prototype
-
-### 6.1 What your device must do
-
-Your hardware needs to publish an MQTT message to this topic:
-
-```
-pond/{pondId}/sensor
-```
-
-Where `{pondId}` is a number representing which pond the sensor is for (e.g., `1`, `2`, or `3`).
-
-**Payload format (JSON):**
-
-```json
-{
-  "temperature": 28.45,
-  "do": 5.32,
-  "ph": 7.15
-}
-```
-
-| Field | Type | Unit | Description |
-|-------|------|------|-------------|
-| `temperature` | float | °C | Water temperature |
-| `do` | float | mg/L | Dissolved oxygen level |
-| `ph` | float | — | pH level (0–14 scale) |
-
-### 6.2 Connecting to the MQTT broker
-
-The MQTT broker (EMQX) runs on port `1883` of the machine running Docker.
-
-| Setting | Value |
-|---------|-------|
-| **Host** | IP address of the computer running Docker (e.g., `192.168.1.100`) |
-| **Port** | `1883` |
-| **Protocol** | MQTT v3.1.1 (no TLS for local use) |
-| **Username** | *(none required)* |
-| **Password** | *(none required)* |
-| **QoS** | 1 (recommended) |
-
-> **Finding your computer's IP:** Run `ipconfig` (Windows) or `ifconfig` / `ip a` (Linux/Mac) and look for your LAN IP address (usually starts with `192.168.` or `10.`).
-
-### 6.3 Example code for common platforms
-
-#### ESP32 / ESP8266 (Arduino IDE)
-
-```cpp
-#include <WiFi.h>
-#include <PubSubClient.h>
-#include <ArduinoJson.h>
-
-const char* ssid = "YOUR_WIFI_NAME";
-const char* password = "YOUR_WIFI_PASSWORD";
-
-// IP of the computer running Docker
-const char* mqttServer = "192.168.1.100";
-const int mqttPort = 1883;
-const int pondId = 1;  // Change per pond
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-void connectMQTT() {
-  while (!client.connected()) {
-    Serial.print("Connecting to MQTT...");
-    if (client.connect("esp32-pond-1")) {
-      Serial.println("connected");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.println(client.state());
-      delay(3000);
-    }
-  }
-}
-
-void publishSensorData(float temperature, float doLevel, float ph) {
-  StaticJsonDocument<128> doc;
-  doc["temperature"] = temperature;
-  doc["do"] = doLevel;
-  doc["ph"] = ph;
-
-  char payload[128];
-  serializeJson(doc, payload);
-
-  char topic[32];
-  snprintf(topic, sizeof(topic), "pond/%d/sensor", pondId);
-
-  client.publish(topic, payload, true);
-  Serial.printf("Published: %s → %s\n", topic, payload);
-}
-
-void setup() {
-  Serial.begin(115200);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) delay(500);
-
-  client.setServer(mqttServer, mqttPort);
-}
-
-void loop() {
-  if (!client.connected()) connectMQTT();
-  client.loop();
-
-  // Replace these with your actual sensor readings
-  float temperature = readTemperatureSensor();
-  float doLevel = readDOSensor();
-  float ph = readPhSensor();
-
-  publishSensorData(temperature, doLevel, ph);
-  delay(5000);  // Publish every 5 seconds
-}
-```
-
-#### Raspberry Pi (Python)
-
-```python
-import paho.mqtt.client as mqtt
-import json
-import time
-
-MQTT_HOST = "192.168.1.100"  # IP of the computer running Docker
-MQTT_PORT = 1883
-POND_ID = 1
-
-client = mqtt.Client()
-client.connect(MQTT_HOST, MQTT_PORT)
-
-def publish_sensor_data(temperature, do_level, ph):
-    topic = f"pond/{POND_ID}/sensor"
-    payload = json.dumps({
-        "temperature": temperature,
-        "do": do_level,
-        "ph": ph
-    })
-    client.publish(topic, payload, qos=1)
-    print(f"Published: {topic} → {payload}")
-
-while True:
-    # Replace with your actual sensor readings
-    temperature = read_temperature_sensor()
-    do_level = read_do_sensor()
-    ph = read_ph_sensor()
-
-    publish_sensor_data(temperature, do_level, ph)
-    time.sleep(5)
-```
-
-### 6.4 Disabling the simulators (optional)
-
-The project includes 3 simulator containers that generate fake data for ponds 1, 2, and 3. Once your hardware is publishing real data for a pond, you can disable its corresponding simulator so they don't conflict.
-
-Open `docker-compose.yml` and comment out or remove the simulator services you no longer need:
-
-```yaml
-# Comment out or delete the simulator for your pond:
-# simulator:
-#   build: ./services/simulator
-#   ...
-
-# simulator-2:
-#   ...
-
-# simulator-3:
-#   ...
-```
-
-Then restart:
-
-```bash
-docker compose down
-docker compose up --build
-```
-
-### 6.5 Receiving control commands (optional)
-
-The system automatically publishes lime control commands back to your device. If you want your hardware to respond to these commands (e.g., activate a lime pump), subscribe to:
-
-```
-pond/{pondId}/control
-```
-
-**Message payload:**
-
-```json
-{ "lime": "ON" }
-```
-
-or
-
-```json
-{ "lime": "OFF" }
-```
-
-The worker automatically sends `lime: ON` when pH drops below 6.5, and `lime: OFF` when it recovers. Manual controls from the dashboard also publish to this topic.
-
-#### ESP32 example (subscribe to control):
-
-```cpp
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<64> doc;
-  deserializeJson(doc, payload, length);
-
-  const char* limeState = doc["lime"];
-  if (strcmp(limeState, "ON") == 0) {
-    digitalWrite(LIME_PUMP_PIN, HIGH);  // Activate lime pump
-  } else {
-    digitalWrite(LIME_PUMP_PIN, LOW);   // Deactivate
-  }
-}
-
-void connectMQTT() {
-  while (!client.connected()) {
-    if (client.connect("esp32-pond-1")) {
-      char controlTopic[32];
-      snprintf(controlTopic, sizeof(controlTopic), "pond/%d/control", pondId);
-      client.subscribe(controlTopic);
-    }
-  }
-}
-```
-
----
-
-## 7. Switching from Simulators to Real Hardware
-
-The project ships with three simulator containers (`simulator`, `simulator-2`, `simulator-3`) that generate fake sensor data for ponds 1, 2, and 3. When your real device is ready, you need to stop the simulator for that pond so they don't publish conflicting data to the same topic.
-
-### 7.1 Understand what's running
-
-Before making changes, check which containers are active:
-
-```bash
 docker compose ps
 ```
 
-You'll see something like:
+The following services should be running:
 
-```
-NAME              IMAGE         STATUS
-wm-postgres       postgres:15   Up (healthy)
-wm-emqx           emqx:5.8      Up (healthy)
-wm-worker         wm-worker     Up
-wm-web            wm-web        Up
-wm-simulator      wm-simulator  Up   ← fake data for pond 1
-wm-simulator-2    wm-simulator  Up   ← fake data for pond 2
-wm-simulator-3    wm-simulator  Up   ← fake data for pond 3
-```
+- `wm-postgres`
+- `wm-emqx`
+- `wm-worker`
+- `wm-web`
 
-### 7.2 Stop a simulator without restarting everything
+Open the dashboard at <http://localhost:3000>.
 
-If your hardware is already running and publishing data, you can stop just the conflicting simulator on the fly — no need to bring the whole stack down:
+## 3. Find the server's LAN address
 
-```bash
-# Stop the simulator for pond 1 only
-docker compose stop simulator
+On the computer running Docker:
 
-# Stop pond 2
-docker compose stop simulator-2
-
-# Stop pond 3
-docker compose stop simulator-3
-
-# Stop all three at once
-docker compose stop simulator simulator-2 simulator-3
+```powershell
+ipconfig
 ```
 
-> This stops the container immediately. The rest of the stack (database, broker, worker, web) keeps running without interruption.
+Use the active Wi-Fi or Ethernet adapter's IPv4 address, usually `192.168.x.x` or `10.x.x.x`. This address goes in the ESP32's `MQTT_HOST`; `localhost` would point back to the ESP32 itself.
 
-To bring a simulator back up (e.g., for testing):
+Both the ESP32 and server must be mutually reachable. Allow inbound TCP port 1883 in the operating-system firewall. Keep this unauthenticated development broker on a trusted local network only.
 
-```bash
-docker compose start simulator
+## 4. Prepare the firmware
+
+Open [`hardware/esp32-kolampintar/esp32-kolampintar.ino`](hardware/esp32-kolampintar/esp32-kolampintar.ino) in Arduino IDE.
+
+Install:
+
+- ESP32 board support
+- PubSubClient by Nick O'Leary
+- ArduinoJson by Benoit Blanchon
+- LiquidCrystal I2C by Frank de Brabander
+
+Copy:
+
+```text
+hardware/esp32-kolampintar/secrets.example.h
 ```
 
-### 7.3 Permanently remove simulators from the stack
+to:
 
-Once you've confirmed your hardware works, remove the simulator services from `docker-compose.yml` so they never start again.
-
-Open `docker-compose.yml` and delete or comment out the simulator blocks. Here's what to remove:
-
-```yaml
-# DELETE or comment out these three blocks:
-
-  simulator:
-    build: ./services/simulator
-    container_name: wm-simulator
-    depends_on:
-      emqx:
-        condition: service_healthy
-    environment:
-      - MQTT_URL=mqtt://emqx:1883
-      - POND_ID=1
-    restart: on-failure
-    networks:
-      - waternet
-
-  simulator-2:
-    build: ./services/simulator
-    container_name: wm-simulator-2
-    depends_on:
-      emqx:
-        condition: service_healthy
-    environment:
-      - MQTT_URL=mqtt://emqx:1883
-      - POND_ID=2
-    restart: on-failure
-    networks:
-      - waternet
-
-  simulator-3:
-    build: ./services/simulator
-    container_name: wm-simulator-3
-    depends_on:
-      emqx:
-        condition: service_healthy
-    environment:
-      - MQTT_URL=mqtt://emqx:1883
-      - POND_ID=3
-    restart: on-failure
-    networks:
-      - waternet
+```text
+hardware/esp32-kolampintar/secrets.h
 ```
 
-Then apply the change:
+Then configure:
 
-```bash
-docker compose down
-docker compose up --build
+```cpp
+const char* WIFI_SSID = "your-wifi";
+const char* WIFI_PASSWORD = "your-password";
+const char* MQTT_HOST = "192.168.1.100";
+const uint16_t MQTT_PORT = 1883;
 ```
 
-The `simulator` image and source folder (`services/simulator/`) can stay — removing from `docker-compose.yml` is enough.
+`secrets.h` is ignored by Git.
 
-### 7.4 Partial replacement (some real, some simulated)
+## 5. Verify the hardware configuration
 
-If you only have hardware for one or two ponds but still want to see data for the others, keep the simulators for the ponds without real devices and stop only the ones being replaced.
+Near the top of the sketch, check:
 
-**Example — real device on pond 1, simulators on ponds 2 and 3:**
-
-```bash
-docker compose stop simulator   # stop fake pond 1
-# simulator-2 and simulator-3 keep running
+```cpp
+constexpr int POND_ID = 1;
+constexpr int PH_PIN = 34;
+constexpr int RELAY_PIN = 26;
+constexpr bool RELAY_ACTIVE_LOW = true;
+constexpr float PH_MAX_ON = 7.5F;
+constexpr float PH_MAX_OFF = 7.3F;
 ```
 
-Your hardware publishes to `pond/1/sensor`, the simulators continue publishing to `pond/2/sensor` and `pond/3/sensor`. All three ponds remain visible on the dashboard.
+Set `RELAY_ACTIVE_LOW` to `false` if the relay activates on a HIGH signal. During boot, the firmware always commands the relay OFF.
 
-### 7.5 Verify the transition
+The expected plumbing behavior is:
 
-After stopping a simulator and connecting your hardware, confirm the real data is coming through:
+- relay/solenoid OFF: acid flow stopped
+- relay/solenoid ON: acid flow enabled
 
-```bash
-# Watch the worker processing your hardware's messages
+Verify this without acid before commissioning.
+
+## 6. Calibrate the pH probe
+
+The sketch uses two-point calibration:
+
+```cpp
+constexpr float PH_7_VOLTAGE = 2.4F;
+constexpr float PH_4_VOLTAGE = 2.9F;
+```
+
+Measure the ESP32 ADC input voltage while the probe is in fresh pH 7 and pH 4 buffer solutions, then replace these constants. Ensure the conditioned sensor voltage never exceeds the ESP32 ADC input range.
+
+Rinse the probe with distilled water between buffers and wait for each reading to stabilize. Calibration quality directly affects automatic dosing safety.
+
+## 7. Upload and verify telemetry
+
+Upload the firmware and open Serial Monitor at 115200 baud. Expected messages include:
+
+```text
+MQTT terhubung, subscribe pond/1/control
+Telemetri pond/1/sensor -> {"ph":7.62,"solenoid":"ON","mode":"AUTO","rssi":-51}
+```
+
+On the server, watch the worker:
+
+```powershell
 docker compose logs -f worker
 ```
 
-You should see lines like:
+Expected ingestion output:
 
-```
-[pond 1] Received: temp=28.5 do=5.2 ph=7.1
-[pond 1] Saved to database
-```
-
-Then open http://localhost:3000 — the chart should show your real sensor readings updating live.
-
----
-
-## 8. API Reference
-
-If you need to push data or read data from outside Docker (e.g., from a separate backend service), the dashboard exposes REST endpoints on port `3000`.
-
-### GET `/api/data?pondId={id}`
-
-Returns the last 20 sensor readings for a pond.
-
-```bash
-curl http://localhost:3000/api/data?pondId=1
+```text
+[Worker] Saved pond=1 ph=7.62 solenoid=ON mode=AUTO
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 42,
-      "pond_id": 1,
-      "temperature": 28.5,
-      "do_level": 5.2,
-      "ph_level": 7.1,
-      "created_at": "2026-06-10T08:30:00.000Z"
-    }
-  ]
-}
+The dashboard should show the pond within five seconds and mark the device offline if no new telemetry arrives for approximately 15 seconds.
+
+## 8. MQTT message contract
+
+### Telemetry
+
+Topic:
+
+```text
+pond/{pondId}/sensor
 ```
 
-### GET `/api/ponds`
-
-Returns the latest reading and status for all ponds.
-
-```bash
-curl http://localhost:3000/api/ponds
-```
-
-**Status logic:**
-
-| Condition | Status |
-|-----------|--------|
-| DO < 3 mg/L OR pH < 6.0 | `kritis` (critical) |
-| DO < 4 mg/L OR pH < 6.5 | `peringatan` (warning) |
-| Otherwise | `normal` |
-
-### POST `/api/control`
-
-Manually trigger lime control from your code.
-
-```bash
-curl -X POST http://localhost:3000/api/control \
-  -H "Content-Type: application/json" \
-  -d '{"pondId": 1, "lime": "ON"}'
-```
-
-**Body:**
+Payload:
 
 ```json
 {
-  "pondId": 1,
-  "lime": "ON"
+  "ph": 7.62,
+  "solenoid": "ON",
+  "mode": "AUTO",
+  "rssi": -51
 }
 ```
 
-### POST `/api/journal`
+| Field | Required | Type | Meaning |
+|---|---|---|---|
+| `ph` | yes | number | pH from 0 through 14 |
+| `solenoid` | recommended | `ON` or `OFF` | Applied physical output |
+| `mode` | recommended | `AUTO` or `MANUAL` | Active control mode |
+| `rssi` | optional | integer | Wi-Fi signal strength in dBm |
+| `temperature` | optional | number | Future water-temperature reading |
+| `do` | optional | number | Future dissolved-oxygen reading |
 
-Add a journal entry for a pond (feeding, liming events, etc.).
+### Control
 
-```bash
-curl -X POST http://localhost:3000/api/journal \
-  -H "Content-Type: application/json" \
-  -d '{"pondId": 1, "entryType": "pakan", "content": "Fed 2kg pellets"}'
+Topic:
+
+```text
+pond/{pondId}/control
 ```
 
-**Entry types:** `pakan` (feeding), `pengapuran` (liming), `sampling`, `catatan` (notes)
+Payloads:
 
----
-
-## 9. Database Schema
-
-The database is auto-created on first `docker compose up`. You can connect to it directly using DBeaver or psql:
-
-```
-Host:     localhost
-Port:     5432
-Database: waterdb
-Username: user
-Password: password
+```json
+{"mode":"AUTO"}
+{"mode":"MANUAL","solenoid":"ON"}
+{"mode":"MANUAL","solenoid":"OFF"}
 ```
 
-### `sensor_data`
+The device reports the applied state in its next telemetry message. Dashboard state is therefore based on device confirmation, not only on the requested command.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
-| `pond_id` | INTEGER | Pond identifier |
-| `temperature` | REAL | Water temperature (°C) |
-| `do_level` | REAL | Dissolved oxygen (mg/L) |
-| `ph_level` | REAL | pH value |
-| `created_at` | TIMESTAMP | Record time (UTC) |
+### Availability
 
-### `control_log`
+Topic:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
-| `pond_id` | INTEGER | Pond identifier |
-| `action` | VARCHAR(20) | `LIME_ON` or `LIME_OFF` |
-| `source` | VARCHAR(20) | `system` (auto) or `manual` (dashboard) |
-| `created_at` | TIMESTAMP | Record time (UTC) |
-
-### `pond_journal`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
-| `pond_id` | INTEGER | Pond identifier |
-| `entry_type` | VARCHAR(20) | `pakan`, `pengapuran`, `sampling`, `catatan` |
-| `content` | TEXT | Journal text |
-| `created_at` | TIMESTAMP | Record time (UTC) |
-
----
-
-## 10. Verifying Your Integration
-
-### Step 1 — Confirm services are running
-
-```bash
-docker compose ps
+```text
+pond/{pondId}/status
 ```
 
-All services should show `Up` or `healthy`.
+The ESP32 publishes retained `online` and configures MQTT Last Will as retained `offline`.
 
-### Step 2 — Test MQTT with MQTTX (desktop app)
+## 9. Dashboard control
 
-1. Open MQTTX → New Connection
-2. Host: `localhost`, Port: `1883`
-3. Click **Connect**
-4. Subscribe to `pond/+/sensor` to watch incoming sensor data
-5. Publish a test message:
-   - Topic: `pond/1/sensor`
-   - Payload: `{"temperature": 28.5, "do": 5.2, "ph": 7.1}`
-6. You should see the data appear on the dashboard at http://localhost:3000
+The pond detail page provides:
 
-### Step 3 — Check the database
+- **Otomatis**: returns local control to pH hysteresis.
+- **Buka**: opens the solenoid in manual mode.
+- **Tutup**: closes the solenoid in manual mode.
 
-```bash
-docker compose exec postgres psql -U user -d waterdb -c "SELECT * FROM sensor_data ORDER BY created_at DESC LIMIT 5;"
+Manual ON automatically expires after 60 seconds. If pH is still above the automatic threshold when AUTO resumes, the local controller may reopen the solenoid.
+
+The same commands are available through the API:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:3000/api/control `
+  -ContentType application/json `
+  -Body '{"pondId":1,"mode":"AUTO"}'
 ```
 
-You should see rows being inserted every few seconds.
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:3000/api/control `
+  -ContentType application/json `
+  -Body '{"pondId":1,"solenoid":"OFF"}'
+```
 
-### Step 4 — Open the dashboard
+## 10. Multiple ponds
 
-Go to http://localhost:3000 and check that:
-- Charts update with new data
-- The live indicator shows "Connected"
-- Status badges change correctly when pH or DO drops
+Give each physical controller a unique positive `POND_ID`. Pond 2, for example, automatically uses:
 
-### Step 5 — Test control commands
+```text
+pond/2/sensor
+pond/2/control
+pond/2/status
+```
 
-On the Pond Detail page, click **Lime ON** and check:
-- The EMQX dashboard at http://localhost:18083 shows a message published to `pond/1/control`
-- The worker logs show the action: `docker compose logs -f worker`
-
----
+Each board should use its own calibrated voltages and relay configuration. A pond appears in the selector after its first accepted telemetry message.
 
 ## 11. Troubleshooting
 
-### "Cannot connect to MQTT broker" from hardware
+### ESP32 cannot connect to Wi-Fi
 
-- Make sure Docker is running and you ran `docker compose up`
-- Check that port `1883` is not blocked by your firewall:
-  ```bash
-  # Windows — allow inbound port 1883
-  netsh advfirewall firewall add rule name="MQTT" protocol=TCP dir=in localport=1883 action=allow
-  ```
-- Use the correct IP address — not `localhost` from the hardware side; use your computer's LAN IP
+- Confirm the ESP32 supports the selected 2.4 GHz network.
+- Recheck `WIFI_SSID` and `WIFI_PASSWORD`.
+- Move the device closer to the access point and inspect Serial Monitor.
 
-### Dashboard shows no data
+### Wi-Fi works but MQTT does not connect
 
-- Check worker logs: `docker compose logs worker`
-- Verify the MQTT payload is valid JSON with the correct field names (`temperature`, `do`, `ph`)
-- Confirm the topic format is exactly `pond/{number}/sensor`
+- Use the server's LAN IP, not `localhost` and not the Docker service name `emqx`.
+- Confirm `docker compose ps` shows `wm-emqx` healthy.
+- Confirm port 1883 is allowed through the server firewall.
+- Check that client isolation is disabled on the Wi-Fi access point.
 
-### Database not initializing
+### Worker receives nothing
 
-- Run `docker compose down -v` (removes volumes) then `docker compose up --build` to start fresh
-- **Warning:** This deletes all stored data
-
-### Port conflicts
-
-If port `3000`, `1883`, or `5432` is already in use on your machine:
-
-Open `docker-compose.yml` and change the left side of the port mapping:
-
-```yaml
-ports:
-  - "3001:3000"  # Use 3001 on host instead of 3000
-```
-
-### Worker keeps restarting
-
-```bash
+```powershell
 docker compose logs worker
+docker compose logs emqx
 ```
 
-Usually caused by a database connection issue on startup — the worker waits for PostgreSQL to be healthy before starting, but if it still fails, try:
+Confirm the topic is exactly `pond/{positive-number}/sensor` and the payload contains numeric `ph` between 0 and 14.
 
-```bash
-docker compose restart worker
+### Dashboard reports the device offline
+
+- Check Serial Monitor for successful telemetry publication.
+- Check worker logs for saved readings.
+- Ensure the ESP32 publishes more frequently than the 15-second dashboard timeout.
+- Check RSSI; values below roughly -75 dBm indicate a weak connection.
+
+### Relay behavior is reversed
+
+Change `RELAY_ACTIVE_LOW`, upload again, and verify with the dosing line disconnected.
+
+### pH value is pinned at 0 or 14
+
+- Measure the ADC input voltage with a multimeter.
+- Recheck the voltage divider and common ground.
+- Repeat pH 7/pH 4 calibration.
+- Ensure the sensor output does not exceed the ADC range.
+
+## 12. Database inspection
+
+View the latest physical readings:
+
+```powershell
+docker compose exec postgres psql -U user -d waterdb -c "SELECT pond_id, ph_level, solenoid_state, control_mode, rssi, created_at FROM sensor_data ORDER BY created_at DESC LIMIT 10;"
 ```
 
-### "No space left on device" in Docker
-
-```bash
-docker system prune -f
-```
-
----
-
-## Quick Reference Card
-
-```
-# Start everything
-docker compose up --build
-
-# Watch logs
-docker compose logs -f
-
-# Stop
-docker compose down
-
-# Dashboard
-http://localhost:3000
-
-# EMQX Admin
-http://localhost:18083  (admin / public)
-
-# MQTT Broker
-mqtt://localhost:1883
-
-# Database
-postgres://user:password@localhost:5432/waterdb
-
-# Test publish (MQTTX or CLI)
-Topic:   pond/1/sensor
-Payload: {"temperature": 28.5, "do": 5.2, "ph": 7.1}
-
-# Control topic (subscribe on your device)
-pond/1/control  →  {"lime": "ON"} or {"lime": "OFF"}
-```
+Stored readings survive `docker compose down`. Do not use `docker compose down -v` unless you intentionally want to delete the PostgreSQL volume.

@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   FlaskConical,
+  Wifi,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -30,10 +31,22 @@ import {
 interface SensorData {
   id: number;
   pond_id: number;
-  temperature: number;
-  do_level: number;
+  temperature: number | null;
+  do_level: number | null;
   ph_level: number | null;
+  solenoid_state: "ON" | "OFF" | null;
+  control_mode: "AUTO" | "MANUAL" | null;
+  rssi: number | null;
   created_at: string;
+}
+
+function formatTime(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 export default function PondDetailPage({
@@ -47,10 +60,10 @@ export default function PondDetailPage({
   const [data, setData] = useState<SensorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastPollAt, setLastPollAt] = useState(0);
   const [controlLoadingTarget, setControlLoadingTarget] = useState<
     string | null
   >(null);
-  const [limeStatus, setLimeStatus] = useState<"ON" | "OFF" | null>(null);
   const [allPondIds, setAllPondIds] = useState<number[]>([]);
   const [journalRefreshKey, setJournalRefreshKey] = useState(0);
 
@@ -61,6 +74,7 @@ export default function PondDetailPage({
 
       if (json.success) {
         setData(json.data);
+        setLastPollAt(Date.now());
         setError(null);
       } else {
         setError(json.error || "Gagal mengambil data");
@@ -93,32 +107,23 @@ export default function PondDetailPage({
     return () => clearInterval(interval);
   }, [fetchData, fetchPondIds]);
 
-  const sendControl = async (value: "ON" | "OFF") => {
-    setControlLoadingTarget(`lime-${value}`);
+  const sendControl = async (value: "AUTO" | "ON" | "OFF") => {
+    setControlLoadingTarget(value);
     try {
       const res = await fetch("/api/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pondId, lime: value }),
+        body: JSON.stringify(
+          value === "AUTO" ? { pondId, mode: "AUTO" } : { pondId, solenoid: value },
+        ),
       });
       const json = await res.json();
-      if (json.success) {
-        setLimeStatus(value);
-      }
+      if (json.success) await fetchData();
     } catch {
       console.error("Gagal mengirim perintah kontrol");
     } finally {
       setControlLoadingTarget(null);
     }
-  };
-
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
   };
 
   const chartData = [...data].reverse().map((item) => ({
@@ -127,9 +132,15 @@ export default function PondDetailPage({
   }));
 
   const latestRecord = data.length > 0 ? data[0] : null;
+  const isHighPH =
+    latestRecord?.ph_level != null ? latestRecord.ph_level > 7.5 : false;
   const isLowPH =
     latestRecord?.ph_level != null ? latestRecord.ph_level < 6.5 : false;
-  const currentLimeState = limeStatus ?? (isLowPH ? "ON" : "OFF");
+  const currentSolenoidState = latestRecord?.solenoid_state ?? "OFF";
+  const currentControlMode = latestRecord?.control_mode ?? "AUTO";
+  const isDeviceOnline =
+    latestRecord !== null &&
+    lastPollAt - new Date(latestRecord.created_at).getTime() < 15000;
 
   if (loading) {
     return (
@@ -176,13 +187,13 @@ export default function PondDetailPage({
             <div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium shadow-sm">
               <span className="relative flex h-2 w-2">
                 <span
-                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${error ? "bg-destructive" : "bg-success"}`}
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${error || !isDeviceOnline ? "bg-destructive" : "bg-success"}`}
                 ></span>
                 <span
-                  className={`relative inline-flex rounded-full h-2 w-2 ${error ? "bg-destructive" : "bg-success"}`}
+                  className={`relative inline-flex rounded-full h-2 w-2 ${error || !isDeviceOnline ? "bg-destructive" : "bg-success"}`}
                 ></span>
               </span>
-              {error ? "Terputus" : "Langsung"}
+              {error || !isDeviceOnline ? "Perangkat Offline" : "Perangkat Online"}
             </div>
           </div>
         </div>
@@ -213,13 +224,13 @@ export default function PondDetailPage({
                   pH Air
                 </CardTitle>
                 <FlaskConical
-                  className={`h-4 w-4 ${isLowPH ? "text-amber-500" : "text-muted-foreground"}`}
+                  className={`h-4 w-4 ${isHighPH || isLowPH ? "text-amber-500" : "text-muted-foreground"}`}
                 />
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-1">
                   <div
-                    className={`text-2xl font-bold tracking-tight ${isLowPH ? "text-amber-600" : "text-foreground"}`}
+                    className={`text-2xl font-bold tracking-tight ${isHighPH || isLowPH ? "text-amber-600" : "text-foreground"}`}
                   >
                     {latestRecord?.ph_level?.toFixed(2) ?? "--"}
                   </div>
@@ -230,15 +241,18 @@ export default function PondDetailPage({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Status Kapur
+                  Status Solenoid
                 </CardTitle>
                 <FlaskConical
-                  className={`h-4 w-4 ${currentLimeState === "ON" ? "text-amber-500" : "text-muted-foreground"}`}
+                  className={`h-4 w-4 ${currentSolenoidState === "ON" ? "text-amber-500" : "text-muted-foreground"}`}
                 />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight">
-                  {currentLimeState === "ON" ? "NYALA" : "MATI"}
+                  {currentSolenoidState === "ON" ? "NYALA" : "MATI"}
+                  <span className="ml-2 text-xs font-medium text-muted-foreground">
+                    {currentControlMode}
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -246,13 +260,13 @@ export default function PondDetailPage({
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Titik Data
+                  Sinyal Wi-Fi
                 </CardTitle>
-                <Activity className="h-4 w-4 text-muted-foreground" />
+                <Wifi className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold tracking-tight">
-                  {data.length}
+                  {latestRecord?.rssi != null ? `${latestRecord.rssi} dBm` : "--"}
                 </div>
               </CardContent>
             </Card>
@@ -330,13 +344,13 @@ export default function PondDetailPage({
                       />
                       <ReferenceLine
                         yAxisId="ph"
-                        y={6.5}
+                        y={7.5}
                         stroke="#f59e0b"
                         strokeDasharray="4 4"
                         opacity={0.5}
                         label={{
                           position: "insideTopLeft",
-                          value: "Batas Kapur (pH 6.5)",
+                          value: "Batas Solenoid (pH 7.5)",
                           fill: "#f59e0b",
                           fontSize: 10,
                           dy: -10,
@@ -376,37 +390,48 @@ export default function PondDetailPage({
 
           {/* Bottom Section: Controls & Alerts */}
           <div className="grid gap-6 md:grid-cols-2">
-            {/* Left: Lime Control */}
+            {/* Left: Solenoid Control */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">
-                  Kontrol Kapur
+                  Kontrol Solenoid Asam
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Aktuator kapur akan menyala otomatis saat pH di bawah 6.5.
+                  Mode otomatis membuka solenoid di atas pH 7.5 dan menutupnya di bawah pH 7.3.
                 </p>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <button
+                    type="button"
+                    onClick={() => sendControl("AUTO")}
+                    disabled={controlLoadingTarget !== null || currentControlMode === "AUTO"}
+                    className="flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    Otomatis
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => sendControl("ON")}
                     disabled={
-                      controlLoadingTarget !== null || currentLimeState === "ON"
+                      controlLoadingTarget !== null ||
+                      (currentControlMode === "MANUAL" && currentSolenoidState === "ON")
                     }
                     className="flex flex-1 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:pointer-events-none disabled:opacity-50"
                   >
                     <FlaskConical className="h-4 w-4" />
-                    Nyalakan
+                    Buka
                   </button>
                   <button
+                    type="button"
                     onClick={() => sendControl("OFF")}
                     disabled={
                       controlLoadingTarget !== null ||
-                      currentLimeState === "OFF"
+                      (currentControlMode === "MANUAL" && currentSolenoidState === "OFF")
                     }
                     className="flex flex-1 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
                   >
-                    Matikan
+                    Tutup
                   </button>
                 </div>
 
@@ -422,7 +447,7 @@ export default function PondDetailPage({
             <div className="flex flex-col justify-end">
               <div
                 className={`overflow-hidden rounded-xl border p-5 shadow-sm transition-colors duration-300 ${
-                  isLowPH
+                  isHighPH || isLowPH
                     ? "bg-amber-50 border-amber-200"
                     : "bg-emerald-50 border-emerald-200"
                 }`}
@@ -430,12 +455,12 @@ export default function PondDetailPage({
                 <div className="flex items-start gap-4">
                   <div
                     className={`mt-0.5 rounded-full p-1.5 ${
-                      isLowPH
+                      isHighPH || isLowPH
                         ? "bg-amber-100 text-amber-600"
                         : "bg-emerald-100 text-emerald-600"
                     }`}
                   >
-                    {isLowPH ? (
+                    {isHighPH || isLowPH ? (
                       <AlertCircle className="h-5 w-5" />
                     ) : (
                       <CheckCircle2 className="h-5 w-5" />
@@ -444,19 +469,21 @@ export default function PondDetailPage({
                   <div>
                     <h4
                       className={`text-sm font-semibold ${
-                        isLowPH ? "text-amber-800" : "text-emerald-800"
+                        isHighPH || isLowPH ? "text-amber-800" : "text-emerald-800"
                       }`}
                     >
-                      {isLowPH ? "pH Rendah" : "pH Stabil"}
+                      {isHighPH ? "pH Tinggi" : isLowPH ? "pH Rendah" : "pH Stabil"}
                     </h4>
                     <p
                       className={`mt-1 text-sm ${
-                        isLowPH ? "text-amber-700" : "text-emerald-700"
+                        isHighPH || isLowPH ? "text-amber-700" : "text-emerald-700"
                       }`}
                     >
-                      {isLowPH
-                        ? "pH berada di bawah 6.5. Sistem closed-loop mengaktifkan aktuator kapur sampai pH kembali ke rentang aman."
-                        : "pH berada dalam rentang aman. Aktuator kapur tetap siaga dan akan menyala otomatis bila pH turun lagi."}
+                      {isHighPH
+                        ? "pH berada di atas 7.5. Dalam mode otomatis, ESP32 membuka solenoid untuk menurunkan pH sampai di bawah 7.3."
+                        : isLowPH
+                          ? "pH berada di bawah 6.5. Solenoid asam harus tetap tertutup; periksa kondisi air secara manual."
+                          : "pH berada dalam rentang aman. Solenoid tetap siaga dalam mode otomatis."}
                     </p>
                   </div>
                 </div>

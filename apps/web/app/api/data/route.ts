@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     let result;
     if (pondId) {
       result = await pool.query(
-        `SELECT id, pond_id, temperature, do_level, ph_level, created_at
+        `SELECT id, pond_id, temperature, do_level, ph_level,
+                solenoid_state, control_mode, rssi, created_at
          FROM sensor_data
          WHERE pond_id = $1
          ORDER BY created_at DESC
@@ -18,7 +19,8 @@ export async function GET(request: NextRequest) {
       );
     } else {
       result = await pool.query(
-        `SELECT id, pond_id, temperature, do_level, ph_level, created_at
+        `SELECT id, pond_id, temperature, do_level, ph_level,
+                solenoid_state, control_mode, rssi, created_at
          FROM sensor_data
          ORDER BY created_at DESC
          LIMIT 20`,

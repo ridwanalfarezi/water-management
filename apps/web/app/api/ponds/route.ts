@@ -3,16 +3,19 @@ import { NextResponse } from "next/server";
 
 interface PondSummary {
   pond_id: number;
-  temperature: number;
-  do_level: number;
+  temperature: number | null;
+  do_level: number | null;
   ph_level: number | null;
+  solenoid_state: "ON" | "OFF" | null;
+  control_mode: "AUTO" | "MANUAL" | null;
+  rssi: number | null;
   created_at: string;
   status: "normal" | "peringatan" | "kritis";
 }
 
-function computeStatus(doLevel: number, phLevel: number | null): PondSummary["status"] {
-  if (doLevel < 3 || (phLevel !== null && phLevel < 6.0)) return "kritis";
-  if (doLevel < 4 || (phLevel !== null && phLevel < 6.5)) return "peringatan";
+function computeStatus(phLevel: number | null): PondSummary["status"] {
+  if (phLevel === null || phLevel < 6 || phLevel > 8.5) return "kritis";
+  if (phLevel < 6.5 || phLevel > 7.5) return "peringatan";
   return "normal";
 }
 
@@ -21,7 +24,8 @@ export async function GET() {
     // Get the latest reading for each pond using DISTINCT ON
     const result = await pool.query(
       `SELECT DISTINCT ON (pond_id)
-         pond_id, temperature, do_level, ph_level, created_at
+         pond_id, temperature, do_level, ph_level,
+         solenoid_state, control_mode, rssi, created_at
        FROM sensor_data
        ORDER BY pond_id, created_at DESC`,
     );
@@ -31,8 +35,11 @@ export async function GET() {
       temperature: row.temperature,
       do_level: row.do_level,
       ph_level: row.ph_level,
+      solenoid_state: row.solenoid_state,
+      control_mode: row.control_mode,
+      rssi: row.rssi,
       created_at: row.created_at,
-      status: computeStatus(row.do_level, row.ph_level),
+      status: computeStatus(row.ph_level),
     }));
 
     return NextResponse.json({
