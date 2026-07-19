@@ -70,6 +70,7 @@ For pond 1:
 | ESP32 to server | `device/{deviceUid}/sensor` |
 | Dashboard to ESP32 | `device/{deviceUid}/control` |
 | ESP32 availability | `device/{deviceUid}/status` |
+| ESP32 command acknowledgement | `device/{deviceUid}/ack` |
 
 Telemetry:
 
@@ -80,10 +81,18 @@ Telemetry:
 Dashboard commands:
 
 ```json
-{"mode":"AUTO"}
-{"mode":"MANUAL","solenoid":"ON"}
-{"mode":"MANUAL","solenoid":"OFF"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174000","mode":"AUTO"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","mode":"MANUAL","solenoid":"ON"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174002","mode":"MANUAL","solenoid":"OFF"}
 ```
+
+Applied acknowledgement (retained):
+
+```json
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","status":"APPLIED","mode":"MANUAL","solenoid":"ON","relayPinLevel":0}
+```
+
+The control API returns `202` with a `commandId`, and the dashboard polls its status for up to five seconds. An acknowledgement proves that firmware state and the GPIO relay level changed; it does not prove physical liquid flow. Verifying flow requires a separate sensor.
 
 Temperature and dissolved oxygen fields remain optional if they are added to future hardware.
 

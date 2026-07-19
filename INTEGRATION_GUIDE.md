@@ -7,6 +7,7 @@ This guide connects the KolamPintar ESP32 pH controller directly to the web appl
 ```text
 pH probe -> ESP32 -> device/{uid}/sensor -> EMQX -> worker -> PostgreSQL -> dashboard
                       device/{uid}/control <- EMQX <- control API <- dashboard
+                      device/{uid}/ack ----> EMQX -> worker -> command status
 ```
 
 The ESP32 owns automatic pH control. The server stores telemetry and sends explicit operator commands; it does not duplicate the automatic dosing decision.
@@ -174,12 +175,29 @@ device/{deviceUid}/control
 Payloads:
 
 ```json
-{"mode":"AUTO"}
-{"mode":"MANUAL","solenoid":"ON"}
-{"mode":"MANUAL","solenoid":"OFF"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174000","mode":"AUTO"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","mode":"MANUAL","solenoid":"ON"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174002","mode":"MANUAL","solenoid":"OFF"}
 ```
 
-The device reports the applied state in its next telemetry message. Dashboard state is therefore based on device confirmation, not only on the requested command.
+`commandId` is required and must be a UUID. Control messages are non-retained, so a broker reconnect does not replay an old dosing command.
+
+### Command acknowledgement
+
+Topic:
+
+```text
+device/{deviceUid}/ack
+```
+
+Payloads:
+
+```json
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","status":"APPLIED","mode":"MANUAL","solenoid":"ON","relayPinLevel":0}
+{"commandId":"123e4567-e89b-42d3-a456-426614174002","status":"REJECTED","reason":"INVALID_PAYLOAD"}
+```
+
+ACK messages are retained. The worker accepts them only when the command ID belongs to the same device UID. A repeated latest command ID is not executed again; firmware republishes the stored ACK. `APPLIED` confirms the firmware state and the electrical GPIO relay level, not physical valve travel or liquid flow.
 
 ### Availability
 
@@ -216,6 +234,15 @@ Invoke-RestMethod -Method Post `
   -ContentType application/json `
   -Body '{"pondId":1,"solenoid":"OFF"}'
 ```
+
+`POST /api/control` returns HTTP `202` with `commandId` and status `SENT`. Read the correlated result with:
+
+```powershell
+Invoke-RestMethod -Method Get `
+  -Uri http://localhost:3000/api/control/123e4567-e89b-42d3-a456-426614174001
+```
+
+The result moves through `PENDING`, `SENT`, then `APPLIED` or `REJECTED`. Without an ACK for five seconds it becomes `TIMED_OUT`; a later ACK is recorded as `APPLIED_LATE` or `REJECTED_LATE`. Only one `PENDING`/`SENT` command is allowed per device, and another request receives HTTP `409`. Offline devices also return `409`; broker publish failure returns `502` and `PUBLISH_FAILED`.
 
 ## 10. Multiple ponds and automatic assignment
 

@@ -4,6 +4,7 @@
    MQTT telemetry: device/{deviceUid}/sensor
    MQTT commands:  device/{deviceUid}/control
    MQTT presence:  device/{deviceUid}/status
+   MQTT command ACK: device/{deviceUid}/ack
 
    Required Arduino libraries:
    - PubSubClient by Nick O'Leary
@@ -12,6 +13,7 @@
 */
 
 #include <ArduinoJson.h>
+#include <ctype.h>
 #include <LiquidCrystal_I2C.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
@@ -58,6 +60,9 @@ char deviceUid[13];
 char sensorTopic[40];
 char controlTopic[40];
 char statusTopic[40];
+char ackTopic[40];
+char lastCommandId[37] = "";
+char lastAckPayload[320] = "";
 
 void setRelay(bool on) {
   digitalWrite(RELAY_PIN, RELAY_ACTIVE_LOW ? (on ? LOW : HIGH)
@@ -106,12 +111,68 @@ void applyManualSafetyTimeout() {
   }
 }
 
+bool isValidCommandId(const char* commandId) {
+  if (commandId == nullptr || strlen(commandId) != 36) return false;
+  for (int i = 0; i < 36; i++) {
+    const bool isHyphen = i == 8 || i == 13 || i == 18 || i == 23;
+    if (isHyphen ? commandId[i] != '-' : !isxdigit(commandId[i])) return false;
+  }
+  return true;
+}
+
+void rememberAndPublishAck(const char* commandId,
+                           const JsonDocument& document) {
+  strncpy(lastCommandId, commandId, sizeof(lastCommandId) - 1);
+  lastCommandId[sizeof(lastCommandId) - 1] = '\0';
+  serializeJson(document, lastAckPayload, sizeof(lastAckPayload));
+  if (mqttClient.connected()) {
+    mqttClient.publish(ackTopic, lastAckPayload, true);
+  }
+  Serial.printf("ACK %s -> %s\n", ackTopic, lastAckPayload);
+}
+
+void publishLastAck() {
+  if (mqttClient.connected() && lastAckPayload[0] != '\0') {
+    mqttClient.publish(ackTopic, lastAckPayload, true);
+  }
+}
+
+void publishAppliedAck(const char* commandId) {
+  StaticJsonDocument<256> acknowledgement;
+  acknowledgement["commandId"] = commandId;
+  acknowledgement["status"] = "APPLIED";
+  acknowledgement["mode"] = controlMode == AUTO_MODE ? "AUTO" : "MANUAL";
+  acknowledgement["solenoid"] = relayState ? "ON" : "OFF";
+  acknowledgement["relayPinLevel"] = digitalRead(RELAY_PIN) == HIGH ? 1 : 0;
+  rememberAndPublishAck(commandId, acknowledgement);
+}
+
+void publishRejectedAck(const char* commandId, const char* reason) {
+  StaticJsonDocument<192> acknowledgement;
+  acknowledgement["commandId"] = commandId;
+  acknowledgement["status"] = "REJECTED";
+  acknowledgement["reason"] = reason;
+  rememberAndPublishAck(commandId, acknowledgement);
+}
+
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<128> document;
+  StaticJsonDocument<256> document;
   const DeserializationError error =
       deserializeJson(document, payload, length);
   if (error) {
     Serial.printf("Perintah MQTT tidak valid: %s\n", error.c_str());
+    return;
+  }
+
+  const char* commandId = document["commandId"] | "";
+  if (!isValidCommandId(commandId)) {
+    Serial.println("Perintah ditolak: commandId tidak valid");
+    return;
+  }
+
+  if (strcmp(commandId, lastCommandId) == 0) {
+    Serial.printf("Duplikat commandId %s -> kirim ulang ACK\n", commandId);
+    publishLastAck();
     return;
   }
 
@@ -121,19 +182,25 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     setRelay(false);
     applyAutomaticControl();
     Serial.println("Mode -> AUTO");
+    publishAppliedAck(commandId);
     return;
   }
 
   const char* solenoid = document["solenoid"] | "";
-  if (strcmp(solenoid, "ON") == 0) {
+  if (strcmp(mode, "MANUAL") == 0 && strcmp(solenoid, "ON") == 0) {
     controlMode = MANUAL_MODE;
     setRelay(true);
     manualOnStartedAt = millis();
     Serial.println("Mode -> MANUAL, solenoid ON");
-  } else if (strcmp(solenoid, "OFF") == 0) {
+    publishAppliedAck(commandId);
+  } else if (strcmp(mode, "MANUAL") == 0 && strcmp(solenoid, "OFF") == 0) {
     controlMode = MANUAL_MODE;
     setRelay(false);
     Serial.println("Mode -> MANUAL, solenoid OFF");
+    publishAppliedAck(commandId);
+  } else {
+    Serial.println("Perintah ditolak: payload mode/solenoid tidak valid");
+    publishRejectedAck(commandId, "INVALID_PAYLOAD");
   }
 }
 
@@ -159,6 +226,7 @@ void connectMqttIfNeeded() {
   if (mqttClient.connect(clientId, statusTopic, 1, true, "offline")) {
     mqttClient.subscribe(controlTopic, 1);
     mqttClient.publish(statusTopic, "online", true);
+    publishLastAck();
     Serial.printf("MQTT terhubung, subscribe %s\n", controlTopic);
   } else {
     Serial.printf("MQTT gagal, rc=%d\n", mqttClient.state());
@@ -209,13 +277,14 @@ void setup() {
   snprintf(sensorTopic, sizeof(sensorTopic), "device/%s/sensor", deviceUid);
   snprintf(controlTopic, sizeof(controlTopic), "device/%s/control", deviceUid);
   snprintf(statusTopic, sizeof(statusTopic), "device/%s/status", deviceUid);
+  snprintf(ackTopic, sizeof(ackTopic), "device/%s/ack", deviceUid);
   Serial.printf("Device UID: %s\n", deviceUid);
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
-  mqttClient.setBufferSize(256);
+  mqttClient.setBufferSize(512);
   mqttClient.setSocketTimeout(2);
 
   // Allow the first connection attempts immediately.

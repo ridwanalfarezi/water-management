@@ -14,23 +14,22 @@ interface SensorRow {
   created_at: Date;
 }
 
-const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI ahli akuakultur.
+const SYSTEM_INSTRUCTION = `Kamu adalah pendamping petambak ikan yang menjelaskan kondisi kolam dengan bahasa sederhana.
 
-Kamu diberikan data kualitas air terbaru dari kolam ikan. Tugasmu adalah menganalisis data dan memberikan rekomendasi singkat dan praktis untuk petani.
+Berikan saran singkat berdasarkan bacaan pH terbaru.
 
 Aturan:
-- Fokus utama analisis adalah pH untuk kontrol solenoid asam otomatis
-- Jika pH > 7.5 → jelaskan bahwa solenoid otomatis sedang/akan terbuka untuk menurunkan pH
-- Jika pH < 6.5 → jelaskan bahwa solenoid asam harus tetap tertutup dan perlu pemeriksaan manual
-- Jika pH 6.5–7.5 → sampaikan kondisi pH aman
-- Selalu berikan saran yang bisa langsung dilakukan
+- Gunakan istilah "alat" dan "aliran cairan pengatur pH"
+- Jika pH > 7.5, jelaskan bahwa pH di atas batas aman dan alat otomatis mulai mengatur aliran
+- Jika pH < 6.5, jelaskan bahwa pH di bawah batas aman, aliran dihentikan, dan kondisi air perlu diperiksa
+- Jika pH 6.5-7.5, sampaikan bahwa pH aman
+- Berikan tindakan yang dapat langsung dilakukan
 
 Format respons:
-- Maksimal 3 kalimat
-- Bahasa Indonesia sederhana
-- Tanpa istilah teknis, tanpa JSON, tanpa markdown
-- Ringkas, praktis, dan membantu
-- Hindari pernyataan umum`;
+- Maksimal 3 kalimat pendek
+- Bahasa Indonesia yang ramah dan langsung
+- Jangan gunakan istilah telemetri, solenoid, relay, GPIO, MQTT, AUTO, atau MANUAL
+- Tanpa JSON dan tanpa markdown`;
 
 function buildUserPrompt(rows: SensorRow[]): string {
   const sensorJson = rows.map((r) => ({
@@ -61,7 +60,7 @@ ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan sistem: jika pH > 7.5 maka solenoid asam otomatis ON dan OFF setelah pH < 7.3
+Aturan alat: jika pH > 7.5 maka aliran cairan pengatur pH dimulai, lalu dihentikan setelah pH < 7.3
 
 Analisis dan beri saran.`;
 }
@@ -118,7 +117,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         insight:
-          "Belum ada data sensor. Sistem menunggu telemetri dari perangkat kolam.",
+          "Belum ada bacaan pH. Pastikan alat menyala dan sensor terpasang dengan baik.",
         source: "fallback",
       });
     }
@@ -228,7 +227,7 @@ export async function GET(request: NextRequest) {
 }
 
 function generateFallbackInsight(rows: SensorRow[]): string {
-  if (rows.length === 0) return "Belum ada data sensor.";
+  if (rows.length === 0) return "Belum ada bacaan pH untuk kolam ini.";
 
   const latest = rows[0];
   const phValues = rows
@@ -246,25 +245,25 @@ function generateFallbackInsight(rows: SensorRow[]): string {
 
   if (latest.ph_level === null) {
     parts.push(
-      "Data pH belum tersedia. Pastikan sensor pH aktif agar kontrol solenoid otomatis berjalan.",
+      "Belum ada bacaan pH. Pastikan alat menyala dan sensor terpasang dengan baik.",
     );
   } else if (latest.ph_level > 7.5) {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)}. Solenoid otomatis dibuka untuk menurunkan pH.`,
+      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada di atas batas aman. Alat otomatis mengatur aliran cairan pengatur pH.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan terlalu rendah. Solenoid asam tetap tertutup; periksa air secara manual.`,
+      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada di bawah batas aman. Aliran dihentikan; periksa kondisi air.`,
     );
   } else {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang aman. Solenoid tetap siaga.`,
+      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang aman. Tidak ada tindakan tambahan saat ini.`,
     );
   }
 
   if (newerAvg < olderAvg - 0.1) {
     parts.push(
-      `Tren pH cenderung menurun. Pastikan solenoid tertutup jika pH mendekati batas bawah.`,
+      `pH cenderung menurun. Pantau kembali agar tidak melewati batas aman.`,
     );
   } else if (newerAvg > olderAvg + 0.1) {
     parts.push(`Tren pH membaik. Pertahankan pemantauan rutin.`);

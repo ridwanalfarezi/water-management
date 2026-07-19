@@ -29,10 +29,10 @@ export default function SemuaKolamPage() {
         setPonds(json.data);
         setError(null);
       } else {
-        setError(json.error || "Gagal mengambil data");
+        setError("Kondisi kolam belum dapat dimuat. Sistem akan mencoba lagi.");
       }
     } catch {
-      setError("Koneksi terputus — mencoba ulang...");
+      setError("Koneksi sedang terganggu. Sistem akan mencoba lagi.");
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export default function SemuaKolamPage() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4 text-muted-foreground">
           <Activity className="h-8 w-8 animate-pulse text-muted-foreground/50" />
-          <p className="text-sm font-medium">Menghubungkan ke telemetri...</p>
+          <p className="text-sm font-medium">Sedang mengambil kondisi kolam...</p>
         </div>
       </div>
     );
@@ -79,7 +79,7 @@ export default function SemuaKolamPage() {
               <h1 className="text-base font-semibold leading-none tracking-tight text-primary-dark">
                 KolamPintar
               </h1>
-              <p className="text-xs text-muted-foreground mt-1">Semua Kolam</p>
+              <p className="text-xs text-muted-foreground mt-1">Daftar kolam</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -92,7 +92,7 @@ export default function SemuaKolamPage() {
                   className={`relative inline-flex rounded-full h-2 w-2 ${error ? "bg-destructive" : "bg-success"}`}
                 ></span>
               </span>
-              {error ? "Terputus" : "Langsung"}
+              {error ? "Data belum terhubung" : "Data terbaru"}
             </div>
           </div>
         </div>
@@ -116,13 +116,13 @@ export default function SemuaKolamPage() {
             {onlineCount > 0 && (
               <span className="flex items-center gap-1.5 text-emerald-600">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                {onlineCount} Online
+                {onlineCount} alat aktif
               </span>
             )}
             {offlineCount > 0 && (
               <span className="flex items-center gap-1.5 text-zinc-600">
                 <span className="h-2 w-2 rounded-full bg-zinc-500" />
-                {offlineCount} Offline
+                {offlineCount} alat tidak terhubung
               </span>
             )}
           </div>
@@ -132,9 +132,9 @@ export default function SemuaKolamPage() {
         {ponds.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed px-6 py-20 text-center text-muted-foreground">
             <Droplets className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="text-sm font-medium">Belum ada perangkat terdaftar</p>
+            <p className="text-sm font-medium">Belum ada kolam yang terhubung</p>
             <p className="mx-auto mt-1 max-w-sm text-xs">
-              Nyalakan ESP32 dan hubungkan ke broker MQTT. Kolam baru akan diberi nomor dan muncul otomatis.
+              Pastikan alat kolam menyala dan tersambung ke Wi-Fi. Kolam akan muncul otomatis di sini.
             </p>
           </div>
         ) : (

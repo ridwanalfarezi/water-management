@@ -10,7 +10,6 @@ interface AIInsightCardProps {
 
 export function AIInsightCard({ pondId }: AIInsightCardProps) {
   const [insight, setInsight] = useState<string | null>(null);
-  const [source, setSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchInsight = useCallback(async () => {
@@ -23,7 +22,6 @@ export function AIInsightCard({ pondId }: AIInsightCardProps) {
 
       if (json.success) {
         setInsight(json.insight);
-        setSource(json.source);
       }
     } catch {
       // Silently fail — keep the last insight visible
@@ -47,14 +45,7 @@ export function AIInsightCard({ pondId }: AIInsightCardProps) {
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
           <Sparkles className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
         </div>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm font-semibold">Insight AI</CardTitle>
-          {source && (
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-              {source === "ai" ? "Gemini" : "Otomatis"}
-            </span>
-          )}
-        </div>
+        <CardTitle className="text-sm font-semibold">Saran untuk Kolam</CardTitle>
       </CardHeader>
 
       <CardContent>

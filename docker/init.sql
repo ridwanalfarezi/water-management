@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS control_log (
 );
 
 ALTER TABLE control_log ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices(id);
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS command_id UUID;
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'LEGACY';
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS requested_mode VARCHAR(10);
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS requested_solenoid VARCHAR(3);
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS applied_mode VARCHAR(10);
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS applied_solenoid VARCHAR(3);
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS relay_pin_level SMALLINT;
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(100);
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+ALTER TABLE control_log ADD COLUMN IF NOT EXISTS timed_out_at TIMESTAMPTZ;
 
 DO $$
 BEGIN
@@ -65,3 +76,7 @@ CREATE INDEX IF NOT EXISTS sensor_data_device_created_idx
   ON sensor_data (device_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS pond_journal_device_created_idx
   ON pond_journal (device_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS control_log_command_id_unique_idx
+  ON control_log (command_id) WHERE command_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS control_log_one_inflight_per_device_idx
+  ON control_log (device_id) WHERE status IN ('PENDING', 'SENT');

@@ -10,7 +10,6 @@ interface AISummaryCardProps {
 
 export function AISummaryCard({ pondId }: AISummaryCardProps) {
   const [summary, setSummary] = useState<string | null>(null);
-  const [source, setSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchSummary = useCallback(async () => {
@@ -20,7 +19,6 @@ export function AISummaryCard({ pondId }: AISummaryCardProps) {
 
       if (json.success) {
         setSummary(json.summary);
-        setSource(json.source);
       }
     } catch {
       // Keep last summary visible
@@ -43,14 +41,7 @@ export function AISummaryCard({ pondId }: AISummaryCardProps) {
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50">
           <Sun className="h-3.5 w-3.5 text-amber-600" />
         </div>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm font-semibold">Ringkasan Harian</CardTitle>
-          {source && (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-600">
-              {source === "ai" ? "Gemini" : "Otomatis"}
-            </span>
-          )}
-        </div>
+        <CardTitle className="text-sm font-semibold">Ringkasan Kondisi</CardTitle>
       </CardHeader>
 
       <CardContent>

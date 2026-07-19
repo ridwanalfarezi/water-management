@@ -5,6 +5,8 @@
   "scripts": {
     "lint": "bun run typecheck",
     "test": "bun test src",
+    "test:integration": "bun run integration/command-ack.ts",
+    "simulate:device": "bun run integration/device-simulator.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "bun build src/index.ts --target bun --outfile dist/index.js",
     "start": "bun run src/index.ts"

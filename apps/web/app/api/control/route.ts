@@ -1,10 +1,24 @@
 import pool from "@/lib/db";
 import { getMqttClient } from "@/lib/mqtt";
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 type ControlPayload =
-  | { mode: "AUTO" }
-  | { mode: "MANUAL"; solenoid: "ON" | "OFF" };
+  | { commandId: string; mode: "AUTO" }
+  | {
+      commandId: string;
+      mode: "MANUAL";
+      solenoid: "ON" | "OFF";
+    };
+
+function databaseErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("code" in error)) return undefined;
+  return String((error as { code?: unknown }).code);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 100) : "MQTT publish failed";
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,15 +57,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const commandId = randomUUID();
     let payload: ControlPayload;
     let action: string;
+    let requestedMode: "AUTO" | "MANUAL";
+    let requestedSolenoid: "ON" | "OFF" | null;
 
     if (body.mode === "AUTO") {
-      payload = { mode: "AUTO" };
+      payload = { commandId, mode: "AUTO" };
       action = "SOLENOID_AUTO";
+      requestedMode = "AUTO";
+      requestedSolenoid = null;
     } else if (body.solenoid === "ON" || body.solenoid === "OFF") {
-      payload = { mode: "MANUAL", solenoid: body.solenoid };
+      payload = { commandId, mode: "MANUAL", solenoid: body.solenoid };
       action = `SOLENOID_${body.solenoid}`;
+      requestedMode = "MANUAL";
+      requestedSolenoid = body.solenoid;
     } else {
       return NextResponse.json(
         {
@@ -62,29 +83,85 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    try {
+      await pool.query(
+        `INSERT INTO control_log
+           (pond_id, device_id, command_id, action, source, status,
+            requested_mode, requested_solenoid, created_at)
+         VALUES ($1, $1, $2, $3, 'manual', 'PENDING', $4, $5, NOW())`,
+        [pondId, commandId, action, requestedMode, requestedSolenoid],
+      );
+    } catch (error) {
+      if (databaseErrorCode(error) === "23505") {
+        const active = await pool.query<{ command_id: string }>(
+          `SELECT command_id
+           FROM control_log
+           WHERE device_id = $1 AND status IN ('PENDING', 'SENT')
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [pondId],
+        );
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Command masih diproses",
+            commandId: active.rows[0]?.command_id,
+          },
+          { status: 409 },
+        );
+      }
+      throw error;
+    }
+
     const client = getMqttClient();
     const deviceUid = deviceResult.rows[0].device_uid;
     const topic = `device/${deviceUid}/control`;
     const message = JSON.stringify(payload);
 
-    await new Promise<void>((resolve, reject) => {
-      client.publish(topic, message, { qos: 1 }, (err) => {
-        if (err) reject(err);
-        else resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        client.publish(
+          topic,
+          message,
+          { qos: 1, retain: false },
+          (error) => (error ? reject(error) : resolve()),
+        );
       });
-    });
+    } catch (error) {
+      const reason = errorMessage(error);
+      await pool.query(
+        `UPDATE control_log
+         SET status = 'PUBLISH_FAILED', failure_reason = $2
+         WHERE command_id = $1 AND status IN ('PENDING', 'SENT')`,
+        [commandId, reason],
+      );
+      console.error(`[API /control] Publish failed for ${commandId}:`, error);
+      return NextResponse.json(
+        {
+          success: false,
+          commandId,
+          status: "PUBLISH_FAILED",
+          error: "Gagal mengirim command ke broker MQTT",
+          reason,
+        },
+        { status: 502 },
+      );
+    }
 
+    // A very fast ACK may already have moved PENDING to a final state. Never
+    // overwrite that acknowledgement with SENT.
     await pool.query(
-      `INSERT INTO control_log (pond_id, device_id, action, source, created_at)
-       VALUES ($1, $1, $2, 'manual', NOW())`,
-      [pondId, action],
+      `UPDATE control_log
+       SET status = 'SENT', sent_at = NOW()
+       WHERE command_id = $1 AND status = 'PENDING'`,
+      [commandId],
     );
 
-    console.log(`[API /control] Sent ${message} to ${topic}`);
-    return NextResponse.json({
-      success: true,
-      message: `Command sent to pond ${pondId}`,
-    });
+    console.log(`[API /control] Sent ${commandId} to ${topic}`);
+    return NextResponse.json(
+      { success: true, commandId, status: "SENT" },
+      { status: 202 },
+    );
   } catch (error) {
     console.error("[API /control] Error:", error);
     return NextResponse.json(

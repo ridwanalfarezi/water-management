@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "lint": "tsc --noEmit",
+    "test": "bun test lib",
     "typecheck": "tsc --noEmit",
     "build": "next build",
     "start": "next start"

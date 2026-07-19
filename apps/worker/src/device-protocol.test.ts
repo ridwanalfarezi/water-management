@@ -11,7 +11,7 @@ describe("device protocol", () => {
     expect(normalizeDeviceUid("A1B2C3")).toBeNull();
   });
 
-  test("parses sensor and status topics", () => {
+  test("parses sensor, status, and acknowledgement topics", () => {
     expect(parseDeviceTopic("device/a1b2c3d4e5f6/sensor")).toEqual({
       deviceUid: "A1B2C3D4E5F6",
       kind: "sensor",
@@ -19,6 +19,10 @@ describe("device protocol", () => {
     expect(parseDeviceTopic("device/A1B2C3D4E5F6/status")).toEqual({
       deviceUid: "A1B2C3D4E5F6",
       kind: "status",
+    });
+    expect(parseDeviceTopic("device/A1B2C3D4E5F6/ack")).toEqual({
+      deviceUid: "A1B2C3D4E5F6",
+      kind: "ack",
     });
   });
 

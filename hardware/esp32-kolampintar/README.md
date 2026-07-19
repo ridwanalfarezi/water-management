@@ -18,6 +18,7 @@ Use the server computer's LAN address for `MQTT_HOST`, not `localhost`. Both dev
 - Telemetry topic: `device/{deviceUid}/sensor`
 - Control topic: `device/{deviceUid}/control`
 - Presence topic: `device/{deviceUid}/status`
+- Acknowledgement topic: `device/{deviceUid}/ack`
 
 `deviceUid` is a stable 12-character hexadecimal identifier generated from the ESP32 eFuse MAC. The backend assigns the device a permanent pond number when it first connects.
 
@@ -30,10 +31,18 @@ Telemetry sent every five seconds:
 Dashboard commands:
 
 ```json
-{"mode":"AUTO"}
-{"mode":"MANUAL","solenoid":"ON"}
-{"mode":"MANUAL","solenoid":"OFF"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174000","mode":"AUTO"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","mode":"MANUAL","solenoid":"ON"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174002","mode":"MANUAL","solenoid":"OFF"}
 ```
+
+Every command must contain a valid UUID `commandId`. After applying the state and reading back the GPIO output, firmware publishes a retained acknowledgement:
+
+```json
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","status":"APPLIED","mode":"MANUAL","solenoid":"ON","relayPinLevel":0}
+```
+
+Invalid payloads with a valid ID receive `REJECTED`. A duplicate of the latest `commandId` is not executed again; the last acknowledgement is republished. This confirms firmware and relay-pin state only, not physical valve movement or liquid flow.
 
 For safety, manual ON returns to automatic mode after 60 seconds. Boot, Wi-Fi failure, and MQTT failure do not disable the local automatic hysteresis. The relay starts OFF after every reset.
 

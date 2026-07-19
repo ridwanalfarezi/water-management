@@ -18,10 +18,10 @@ interface JournalListProps {
 }
 
 const typeBadgeConfig: Record<string, { label: string; className: string }> = {
-  pakan: { label: "Pakan", className: "bg-blue-100 text-blue-700" },
+  pakan: { label: "Pemberian pakan", className: "bg-blue-100 text-blue-700" },
   pengapuran: { label: "Pengapuran", className: "bg-amber-100 text-amber-700" },
-  sampling: { label: "Sampling", className: "bg-purple-100 text-purple-700" },
-  catatan: { label: "Catatan", className: "bg-zinc-100 text-zinc-600" },
+  sampling: { label: "Pengecekan air", className: "bg-purple-100 text-purple-700" },
+  catatan: { label: "Catatan lainnya", className: "bg-zinc-100 text-zinc-700" },
 };
 
 export function JournalList({ pondId, refreshKey }: JournalListProps) {
@@ -61,7 +61,7 @@ export function JournalList({ pondId, refreshKey }: JournalListProps) {
           <BookOpen className="h-3.5 w-3.5 text-zinc-600" />
         </div>
         <div>
-          <CardTitle className="text-sm font-semibold">Riwayat Hari Ini</CardTitle>
+          <CardTitle className="text-sm font-semibold">Catatan Hari Ini</CardTitle>
         </div>
       </CardHeader>
       <CardContent>

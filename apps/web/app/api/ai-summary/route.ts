@@ -14,23 +14,20 @@ interface SensorRow {
   created_at: Date;
 }
 
-const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI ahli akuakultur.
-
-Kamu diberikan data kualitas air terbaru dari kolam ikan. Tugasmu adalah menganalisis data dan memberikan ringkasan kondisi kolam dalam bahasa Indonesia yang sederhana.
+const SYSTEM_INSTRUCTION = `Kamu adalah pendamping petambak ikan yang merangkum kondisi kolam dengan bahasa sederhana.
 
 Aturan:
-- Fokuskan ringkasan pada pH dan kondisi kontrol solenoid asam otomatis
-- Jika pH > 7.5 → jelaskan solenoid otomatis terbuka untuk menurunkan pH
-- Jika pH < 6.5 → jelaskan solenoid harus tertutup dan perlu pemeriksaan manual
-- Jika pH 6.5–7.5 → jelaskan pH aman
-- Selalu berikan saran yang bisa langsung dilakukan
-- Gunakan bahasa yang sederhana, bisa dipahami petani
+- Gunakan istilah "alat" dan "aliran cairan pengatur pH"
+- Jika pH > 7.5, jelaskan bahwa pH di atas batas aman dan alat otomatis mulai mengatur aliran
+- Jika pH < 6.5, jelaskan bahwa pH di bawah batas aman, aliran dihentikan, dan kondisi air perlu diperiksa
+- Jika pH 6.5-7.5, jelaskan bahwa pH aman
+- Berikan tindakan yang dapat langsung dilakukan
 
 Format respons:
-- Maksimal 2-3 kalimat
-- Bahasa Indonesia sederhana, tanpa istilah teknis
-- Tanpa JSON, tanpa markdown
-- Langsung ke inti masalah dan saran`;
+- Maksimal 2-3 kalimat pendek
+- Bahasa Indonesia yang ramah dan langsung
+- Jangan gunakan istilah telemetri, solenoid, relay, GPIO, MQTT, AUTO, atau MANUAL
+- Tanpa JSON dan tanpa markdown`;
 
 function buildUserPrompt(rows: SensorRow[], pondId: number): string {
   const sensorJson = rows.map((r) => ({
@@ -61,7 +58,7 @@ ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan sistem: pH > 7.5 => solenoid asam otomatis ON; pH < 7.3 => OFF
+Aturan alat: pH > 7.5 memulai aliran cairan pengatur pH; pH < 7.3 menghentikan aliran
 
 Berikan ringkasan kondisi harian dalam 2-3 kalimat bahasa Indonesia.`;
 }
@@ -106,7 +103,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         summary:
-          "Belum ada data sensor. Sistem menunggu telemetri dari perangkat kolam.",
+          "Belum ada bacaan pH. Pastikan alat menyala dan sensor terpasang dengan baik.",
         source: "fallback",
       });
     }
@@ -203,7 +200,7 @@ export async function GET(request: NextRequest) {
 }
 
 function generateFallbackSummary(rows: SensorRow[], pondId: number): string {
-  if (rows.length === 0) return "Belum ada data sensor untuk kolam ini.";
+  if (rows.length === 0) return "Belum ada bacaan pH untuk kolam ini.";
 
   const latest = rows[0];
   const phValues = rows
@@ -221,15 +218,15 @@ function generateFallbackSummary(rows: SensorRow[], pondId: number): string {
 
   if (latest.ph_level === null) {
     parts.push(
-      `Data pH Kolam ${pondId} belum tersedia. Pastikan sensor pH aktif agar kontrol solenoid otomatis berjalan.`,
+      `Belum ada bacaan pH untuk Kolam ${pondId}. Pastikan alat menyala dan sensor terpasang dengan baik.`,
     );
   } else if (latest.ph_level > 7.5) {
     parts.push(
-      `pH Kolam ${pondId} naik ke ${latest.ph_level.toFixed(1)}. Sistem membuka solenoid otomatis untuk menurunkannya.`,
+      `pH Kolam ${pondId} berada di atas batas aman, yaitu ${latest.ph_level.toFixed(1)}. Alat otomatis mengatur aliran cairan pengatur pH.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH Kolam ${pondId} turun ke ${latest.ph_level.toFixed(1)}. Solenoid asam tetap tertutup dan kondisi air perlu diperiksa.`,
+      `pH Kolam ${pondId} berada di bawah batas aman, yaitu ${latest.ph_level.toFixed(1)}. Aliran dihentikan dan kondisi air perlu diperiksa.`,
     );
   } else {
     parts.push(

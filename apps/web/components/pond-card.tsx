@@ -2,6 +2,7 @@
 
 import { ArrowRight, FlaskConical } from "lucide-react";
 import Link from "next/link";
+import { getPondStatusLabel } from "@/lib/user-copy";
 
 interface PondCardProps {
   pondId: number;
@@ -13,35 +14,30 @@ interface PondCardProps {
 
 const statusConfig = {
   normal: {
-    label: "Normal",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
     badge: "bg-emerald-100 text-emerald-700",
     dot: "bg-emerald-500",
   },
   peringatan: {
-    label: "Peringatan",
     bg: "bg-amber-50",
     border: "border-amber-200",
     badge: "bg-amber-100 text-amber-700",
     dot: "bg-amber-500",
   },
   kritis: {
-    label: "Kritis",
     bg: "bg-red-50",
     border: "border-red-200",
     badge: "bg-red-100 text-red-700",
     dot: "bg-red-500 animate-pulse",
   },
   belum_ada_data: {
-    label: "Menunggu Data",
     bg: "bg-sky-50",
     border: "border-sky-200",
     badge: "bg-sky-100 text-sky-800",
     dot: "bg-sky-500",
   },
   offline: {
-    label: "Offline",
     bg: "bg-zinc-50",
     border: "border-zinc-200",
     badge: "bg-zinc-200 text-zinc-700",
@@ -67,6 +63,7 @@ export function PondCard({
   const cfg = statusConfig[
     connectionStatus === "offline" ? "offline" : waterStatus
   ];
+  const statusLabel = getPondStatusLabel(connectionStatus, waterStatus);
   const phOutsideTarget =
     phLevel !== null && (phLevel < 6.5 || phLevel > 7.5);
 
@@ -74,7 +71,7 @@ export function PondCard({
     <Link
       href={`/kolam/${pondId}`}
       className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      aria-label={`Lihat detail Kolam ${pondId}, perangkat ${cfg.label}`}
+      aria-label={`Buka Kolam ${pondId}, status ${statusLabel}`}
     >
       <div
         className={`relative rounded-xl border ${cfg.border} ${cfg.bg} p-5 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5`}
@@ -88,7 +85,7 @@ export function PondCard({
             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.badge}`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-            {cfg.label}
+            {statusLabel}
           </span>
         </div>
 
@@ -111,9 +108,12 @@ export function PondCard({
 
         {/* Footer action */}
         <div className="mt-4 flex items-center justify-between gap-3 text-xs font-medium text-zinc-500">
-          <span>Terakhir terlihat {formatLastSeen(lastSeenAt)}</span>
+          <span>
+            {connectionStatus === "online" ? "Diperbarui" : "Terakhir terhubung"}{" "}
+            pukul {formatLastSeen(lastSeenAt)}
+          </span>
           <span className="flex items-center gap-1 transition-colors group-hover:text-zinc-800">
-            Lihat Detail
+            Buka kolam
             <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
           </span>
         </div>

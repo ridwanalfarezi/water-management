@@ -1,7 +1,7 @@
-export type DeviceTopicKind = "sensor" | "status";
+export type DeviceTopicKind = "sensor" | "status" | "ack";
 
 const DEVICE_TOPIC_PATTERN =
-  /^device\/([0-9a-f]{12})\/(sensor|status)$/i;
+  /^device\/([0-9a-f]{12})\/(sensor|status|ack)$/i;
 
 export function normalizeDeviceUid(value: string): string | null {
   const normalized = value.trim().toUpperCase();

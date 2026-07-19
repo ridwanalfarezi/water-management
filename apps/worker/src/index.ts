@@ -1,6 +1,12 @@
 import mqtt from "mqtt";
 import pg from "pg";
 import type { PoolClient } from "pg";
+import {
+  type CommandAck,
+  type CommandStatus,
+  parseCommandAck,
+  resolveAckStatus,
+} from "./command-protocol";
 import { parseDeviceTopic } from "./device-protocol";
 
 const { Pool } = pg;
@@ -77,11 +83,26 @@ async function migrateDatabase(): Promise<void> {
     ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS rssi INTEGER;
     ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices(id);
     ALTER TABLE control_log ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices(id);
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS command_id UUID;
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'LEGACY';
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS requested_mode VARCHAR(10);
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS requested_solenoid VARCHAR(3);
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS applied_mode VARCHAR(10);
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS applied_solenoid VARCHAR(3);
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS relay_pin_level SMALLINT;
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(100);
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+    ALTER TABLE control_log ADD COLUMN IF NOT EXISTS timed_out_at TIMESTAMPTZ;
     ALTER TABLE pond_journal ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices(id);
     CREATE INDEX IF NOT EXISTS sensor_data_device_created_idx
       ON sensor_data (device_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS pond_journal_device_created_idx
       ON pond_journal (device_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS control_log_command_id_unique_idx
+      ON control_log (command_id) WHERE command_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS control_log_one_inflight_per_device_idx
+      ON control_log (device_id) WHERE status IN ('PENDING', 'SENT');
   `);
   console.log("[Worker] Database schema ready");
 }
@@ -216,9 +237,119 @@ async function saveSensorData(
   }
 }
 
+const FINAL_COMMAND_STATUSES = new Set<CommandStatus>([
+  "APPLIED",
+  "REJECTED",
+  "APPLIED_LATE",
+  "REJECTED_LATE",
+]);
+
+async function handleCommandAck(
+  deviceUid: string,
+  acknowledgement: CommandAck,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query<{ status: CommandStatus }>(
+      `SELECT cl.status
+       FROM control_log cl
+       JOIN devices d ON d.id = cl.device_id
+       WHERE cl.command_id = $1 AND d.device_uid = $2
+       FOR UPDATE OF cl`,
+      [acknowledgement.commandId, deviceUid],
+    );
+
+    if (result.rows.length === 0) {
+      const commandExists = await client.query(
+        `SELECT 1 FROM control_log WHERE command_id = $1`,
+        [acknowledgement.commandId],
+      );
+      await client.query("COMMIT");
+      console.warn(
+        commandExists.rows.length > 0
+          ? `[Worker] Ignored ACK ${acknowledgement.commandId}: wrong device ${deviceUid}`
+          : `[Worker] Ignored ACK ${acknowledgement.commandId}: unknown command`,
+      );
+      return;
+    }
+
+    const currentStatus = result.rows[0].status;
+    if (FINAL_COMMAND_STATUSES.has(currentStatus)) {
+      await client.query("COMMIT");
+      console.log(
+        `[Worker] Duplicate ACK ${acknowledgement.commandId} ignored (${currentStatus})`,
+      );
+      return;
+    }
+
+    const nextStatus = resolveAckStatus(
+      currentStatus,
+      acknowledgement.status,
+    );
+    if (acknowledgement.status === "APPLIED") {
+      await client.query(
+        `UPDATE control_log
+         SET status = $2,
+             applied_mode = $3,
+             applied_solenoid = $4,
+             relay_pin_level = $5,
+             failure_reason = NULL,
+             acknowledged_at = NOW()
+         WHERE command_id = $1`,
+        [
+          acknowledgement.commandId,
+          nextStatus,
+          acknowledgement.mode,
+          acknowledgement.solenoid,
+          acknowledgement.relayPinLevel,
+        ],
+      );
+    } else {
+      await client.query(
+        `UPDATE control_log
+         SET status = $2,
+             failure_reason = $3,
+             acknowledged_at = NOW()
+         WHERE command_id = $1`,
+        [acknowledgement.commandId, nextStatus, acknowledgement.reason],
+      );
+    }
+    await client.query("COMMIT");
+    console.log(
+      `[Worker] ACK ${acknowledgement.commandId} from ${deviceUid}: ${nextStatus}`,
+    );
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function markTimedOutCommands(): Promise<void> {
+  const result = await pool.query(
+    `UPDATE control_log
+     SET status = 'TIMED_OUT', timed_out_at = NOW()
+     WHERE status IN ('PENDING', 'SENT')
+       AND COALESCE(sent_at, created_at::timestamptz)
+           <= NOW() - INTERVAL '5 seconds'
+     RETURNING command_id`,
+  );
+  if (result.rowCount && result.rowCount > 0) {
+    console.warn(`[Worker] Timed out ${result.rowCount} command(s)`);
+  }
+}
+
 async function main(): Promise<void> {
   await waitForDatabase();
   await migrateDatabase();
+  await markTimedOutCommands();
+  setInterval(() => {
+    markTimedOutCommands().catch((error) =>
+      console.error("[Worker] Command timeout sweep failed:", error),
+    );
+  }, 1000);
 
   console.log(`[Worker] Connecting to MQTT at ${MQTT_URL}...`);
   const client = mqtt.connect(MQTT_URL, {
@@ -228,10 +359,14 @@ async function main(): Promise<void> {
 
   client.on("connect", () => {
     console.log("[Worker] Connected to MQTT broker");
-    client.subscribe(["device/+/sensor", "device/+/status"], { qos: 1 }, (err) => {
-      if (err) console.error("[Worker] Subscribe error:", err);
-      else console.log("[Worker] Subscribed to device telemetry and presence");
-    });
+    client.subscribe(
+      ["device/+/sensor", "device/+/status", "device/+/ack"],
+      { qos: 1 },
+      (err) => {
+        if (err) console.error("[Worker] Subscribe error:", err);
+        else console.log("[Worker] Subscribed to telemetry, presence, and ACKs");
+      },
+    );
   });
 
   client.on("message", async (topic: string, message: Buffer) => {
@@ -246,6 +381,21 @@ async function main(): Promise<void> {
           return;
         }
         await updatePresence(deviceTopic.deviceUid, state);
+        return;
+      }
+
+      if (deviceTopic.kind === "ack") {
+        const rawAcknowledgement = message.toString();
+        if (!rawAcknowledgement) {
+          console.error(`[Worker] Invalid command ACK on ${topic}`);
+          return;
+        }
+        const acknowledgement = parseCommandAck(JSON.parse(rawAcknowledgement));
+        if (!acknowledgement) {
+          console.error(`[Worker] Invalid command ACK on ${topic}`);
+          return;
+        }
+        await handleCommandAck(deviceTopic.deviceUid, acknowledgement);
         return;
       }
 
