@@ -13,13 +13,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const pondIdNum = parseInt(pondId, 10);
+    const pondIdNum = Number(pondId);
+    if (!Number.isInteger(pondIdNum) || pondIdNum <= 0) {
+      return NextResponse.json(
+        { success: false, error: "pondId harus berupa bilangan bulat positif" },
+        { status: 400 },
+      );
+    }
 
     // Get today's journal entries for this pond
     const result = await pool.query(
       `SELECT id, pond_id, entry_type, content, created_at
        FROM pond_journal
-       WHERE pond_id = $1
+       WHERE device_id = $1
          AND created_at::date = CURRENT_DATE
        ORDER BY created_at DESC`,
       [pondIdNum],
@@ -59,12 +65,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const pondIdNum = Number(pondId);
+    if (!Number.isInteger(pondIdNum) || pondIdNum <= 0) {
+      return NextResponse.json(
+        { success: false, error: "pondId harus berupa bilangan bulat positif" },
+        { status: 400 },
+      );
+    }
+
     const result = await pool.query(
-      `INSERT INTO pond_journal (pond_id, entry_type, content, created_at)
-       VALUES ($1, $2, $3, NOW())
+      `INSERT INTO pond_journal (pond_id, device_id, entry_type, content, created_at)
+       SELECT id, id, $2, $3, NOW()
+       FROM devices
+       WHERE id = $1
        RETURNING id, pond_id, entry_type, content, created_at`,
-      [parseInt(pondId, 10), entryType, content.trim()],
+      [pondIdNum, entryType, content.trim()],
     );
+
+    if (result.rows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Device tidak ditemukan" },
+        { status: 404 },
+      );
+    }
 
     return NextResponse.json({
       success: true,

@@ -10,8 +10,10 @@ interface PondData {
   temperature: number | null;
   do_level: number | null;
   ph_level: number | null;
-  created_at: string;
-  status: "normal" | "peringatan" | "kritis";
+  created_at: string | null;
+  last_seen_at: string;
+  connection_status: "online" | "offline";
+  water_status: "normal" | "peringatan" | "kritis" | "belum_ada_data";
 }
 
 export default function SemuaKolamPage() {
@@ -42,9 +44,10 @@ export default function SemuaKolamPage() {
     return () => clearInterval(interval);
   }, [fetchPonds]);
 
-  const normalCount = ponds.filter((p) => p.status === "normal").length;
-  const warningCount = ponds.filter((p) => p.status === "peringatan").length;
-  const criticalCount = ponds.filter((p) => p.status === "kritis").length;
+  const onlineCount = ponds.filter(
+    (p) => p.connection_status === "online",
+  ).length;
+  const offlineCount = ponds.length - onlineCount;
 
   if (loading) {
     return (
@@ -110,22 +113,16 @@ export default function SemuaKolamPage() {
           </span>
           <div className="h-4 w-px bg-zinc-200" />
           <div className="flex items-center gap-3">
-            {normalCount > 0 && (
+            {onlineCount > 0 && (
               <span className="flex items-center gap-1.5 text-emerald-600">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                {normalCount} Normal
+                {onlineCount} Online
               </span>
             )}
-            {warningCount > 0 && (
-              <span className="flex items-center gap-1.5 text-amber-600">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
-                {warningCount} Peringatan
-              </span>
-            )}
-            {criticalCount > 0 && (
-              <span className="flex items-center gap-1.5 text-red-600">
-                <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                {criticalCount} Kritis
+            {offlineCount > 0 && (
+              <span className="flex items-center gap-1.5 text-zinc-600">
+                <span className="h-2 w-2 rounded-full bg-zinc-500" />
+                {offlineCount} Offline
               </span>
             )}
           </div>
@@ -133,11 +130,11 @@ export default function SemuaKolamPage() {
 
         {/* Pond Grid */}
         {ponds.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground">
+          <div className="rounded-xl border-2 border-dashed px-6 py-20 text-center text-muted-foreground">
             <Droplets className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="text-sm font-medium">Menunggu data kolam...</p>
-            <p className="text-xs mt-1">
-              Data akan muncul setelah ESP32 terhubung ke MQTT.
+            <p className="text-sm font-medium">Belum ada perangkat terdaftar</p>
+            <p className="mx-auto mt-1 max-w-sm text-xs">
+              Nyalakan ESP32 dan hubungkan ke broker MQTT. Kolam baru akan diberi nomor dan muncul otomatis.
             </p>
           </div>
         ) : (
@@ -147,7 +144,9 @@ export default function SemuaKolamPage() {
                 key={pond.pond_id}
                 pondId={pond.pond_id}
                 phLevel={pond.ph_level}
-                status={pond.status}
+                connectionStatus={pond.connection_status}
+                waterStatus={pond.water_status}
+                lastSeenAt={pond.last_seen_at}
               />
             ))}
           </div>

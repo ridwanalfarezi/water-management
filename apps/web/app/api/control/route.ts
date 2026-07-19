@@ -18,6 +18,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const deviceResult = await pool.query<{
+      device_uid: string;
+      is_online: boolean;
+    }>(
+      `SELECT device_uid,
+              connection_state = 'online'
+              AND last_seen_at >= NOW() - INTERVAL '15 seconds' AS is_online
+       FROM devices
+       WHERE id = $1`,
+      [pondId],
+    );
+
+    if (deviceResult.rows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Device tidak ditemukan" },
+        { status: 404 },
+      );
+    }
+    if (!deviceResult.rows[0].is_online) {
+      return NextResponse.json(
+        { success: false, error: "Device offline" },
+        { status: 409 },
+      );
+    }
+
     let payload: ControlPayload;
     let action: string;
 
@@ -38,7 +63,8 @@ export async function POST(request: NextRequest) {
     }
 
     const client = getMqttClient();
-    const topic = `pond/${pondId}/control`;
+    const deviceUid = deviceResult.rows[0].device_uid;
+    const topic = `device/${deviceUid}/control`;
     const message = JSON.stringify(payload);
 
     await new Promise<void>((resolve, reject) => {
@@ -49,8 +75,8 @@ export async function POST(request: NextRequest) {
     });
 
     await pool.query(
-      `INSERT INTO control_log (pond_id, action, source, created_at)
-       VALUES ($1, $2, 'manual', NOW())`,
+      `INSERT INTO control_log (pond_id, device_id, action, source, created_at)
+       VALUES ($1, $1, $2, 'manual', NOW())`,
       [pondId, action],
     );
 

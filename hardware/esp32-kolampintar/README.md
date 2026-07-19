@@ -8,16 +8,18 @@ This firmware connects the existing pH sensor and relay to KolamPintar over MQTT
 2. Install **PubSubClient**, **ArduinoJson**, and **LiquidCrystal I2C** from Library Manager.
 3. Copy `secrets.example.h` to `secrets.h`.
 4. Set the Wi-Fi credentials and the LAN IP of the computer running Docker in `secrets.h`.
-5. Check `POND_ID`, calibration voltages, relay polarity, and pins near the top of `esp32-kolampintar.ino`.
+5. Check the calibration voltages, relay polarity, and pins near the top of `esp32-kolampintar.ino`. No pond ID needs to be configured.
 6. Select your ESP32 board and upload the sketch.
 
 Use the server computer's LAN address for `MQTT_HOST`, not `localhost`. Both devices must be on the same network, and TCP port 1883 must be allowed through the server firewall.
 
 ## MQTT contract
 
-- Telemetry topic: `pond/{pondId}/sensor`
-- Control topic: `pond/{pondId}/control`
-- Presence topic: `pond/{pondId}/status`
+- Telemetry topic: `device/{deviceUid}/sensor`
+- Control topic: `device/{deviceUid}/control`
+- Presence topic: `device/{deviceUid}/status`
+
+`deviceUid` is a stable 12-character hexadecimal identifier generated from the ESP32 eFuse MAC. The backend assigns the device a permanent pond number when it first connects.
 
 Telemetry sent every five seconds:
 

@@ -5,8 +5,8 @@ This guide connects the KolamPintar ESP32 pH controller directly to the web appl
 ## 1. Data flow
 
 ```text
-pH probe -> ESP32 -> pond/{id}/sensor -> EMQX -> worker -> PostgreSQL -> dashboard
-                      pond/{id}/control <- EMQX <- control API <- dashboard
+pH probe -> ESP32 -> device/{uid}/sensor -> EMQX -> worker -> PostgreSQL -> dashboard
+                      device/{uid}/control <- EMQX <- control API <- dashboard
 ```
 
 The ESP32 owns automatic pH control. The server stores telemetry and sends explicit operator commands; it does not duplicate the automatic dosing decision.
@@ -80,7 +80,6 @@ const uint16_t MQTT_PORT = 1883;
 Near the top of the sketch, check:
 
 ```cpp
-constexpr int POND_ID = 1;
 constexpr int PH_PIN = 34;
 constexpr int RELAY_PIN = 26;
 constexpr bool RELAY_ACTIVE_LOW = true;
@@ -115,8 +114,9 @@ Rinse the probe with distilled water between buffers and wait for each reading t
 Upload the firmware and open Serial Monitor at 115200 baud. Expected messages include:
 
 ```text
-MQTT terhubung, subscribe pond/1/control
-Telemetri pond/1/sensor -> {"ph":7.62,"solenoid":"ON","mode":"AUTO","rssi":-51}
+Device UID: A1B2C3D4E5F6
+MQTT terhubung, subscribe device/A1B2C3D4E5F6/control
+Telemetri device/A1B2C3D4E5F6/sensor -> {"ph":7.62,"solenoid":"ON","mode":"AUTO","rssi":-51}
 ```
 
 On the server, watch the worker:
@@ -128,7 +128,7 @@ docker compose logs -f worker
 Expected ingestion output:
 
 ```text
-[Worker] Saved pond=1 ph=7.62 solenoid=ON mode=AUTO
+[Worker] Saved device=A1B2C3D4E5F6 pond=1 ph=7.62 solenoid=ON mode=AUTO
 ```
 
 The dashboard should show the pond within five seconds and mark the device offline if no new telemetry arrives for approximately 15 seconds.
@@ -140,7 +140,7 @@ The dashboard should show the pond within five seconds and mark the device offli
 Topic:
 
 ```text
-pond/{pondId}/sensor
+device/{deviceUid}/sensor
 ```
 
 Payload:
@@ -168,7 +168,7 @@ Payload:
 Topic:
 
 ```text
-pond/{pondId}/control
+device/{deviceUid}/control
 ```
 
 Payloads:
@@ -186,7 +186,7 @@ The device reports the applied state in its next telemetry message. Dashboard st
 Topic:
 
 ```text
-pond/{pondId}/status
+device/{deviceUid}/status
 ```
 
 The ESP32 publishes retained `online` and configures MQTT Last Will as retained `offline`.
@@ -217,17 +217,11 @@ Invoke-RestMethod -Method Post `
   -Body '{"pondId":1,"solenoid":"OFF"}'
 ```
 
-## 10. Multiple ponds
+## 10. Multiple ponds and automatic assignment
 
-Give each physical controller a unique positive `POND_ID`. Pond 2, for example, automatically uses:
+Flash the same firmware to every controller; no `POND_ID` is required. Each ESP32 derives a stable `deviceUid` from its eFuse MAC. When a new UID first publishes retained `online` or valid telemetry, the worker atomically registers it as the next permanent pond number.
 
-```text
-pond/2/sensor
-pond/2/control
-pond/2/status
-```
-
-Each board should use its own calibrated voltages and relay configuration. A pond appears in the selector after its first accepted telemetry message.
+Each board still uses its own sensor calibration and relay configuration. A registered pond remains visible when disconnected and is marked offline after approximately 15 seconds without telemetry. Historical rows that are not linked to a registered device are not displayed.
 
 ## 11. Troubleshooting
 
@@ -251,7 +245,7 @@ docker compose logs worker
 docker compose logs emqx
 ```
 
-Confirm the topic is exactly `pond/{positive-number}/sensor` and the payload contains numeric `ph` between 0 and 14.
+Confirm the topic is exactly `device/{12-hex-character-uid}/sensor` and the payload contains numeric `ph` between 0 and 14.
 
 ### Dashboard reports the device offline
 

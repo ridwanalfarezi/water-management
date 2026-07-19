@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
       result = await pool.query<SensorRow>(
         `SELECT pond_id, temperature, do_level, ph_level, created_at
          FROM sensor_data
-         WHERE pond_id = $1
+         WHERE device_id = $1
          ORDER BY created_at DESC
          LIMIT 20`,
         [parseInt(pondId, 10)],
@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
       result = await pool.query<SensorRow>(
         `SELECT pond_id, temperature, do_level, ph_level, created_at
          FROM sensor_data
+         WHERE device_id IS NOT NULL
          ORDER BY created_at DESC
          LIMIT 20`,
       );
@@ -197,7 +198,7 @@ export async function GET(request: NextRequest) {
         result = await pool.query<SensorRow>(
           `SELECT pond_id, temperature, do_level, ph_level, created_at
            FROM sensor_data
-           WHERE pond_id = $1
+           WHERE device_id = $1
            ORDER BY created_at DESC
            LIMIT 20`,
           [parseInt(pondId, 10)],
@@ -206,6 +207,7 @@ export async function GET(request: NextRequest) {
         result = await pool.query<SensorRow>(
           `SELECT pond_id, temperature, do_level, ph_level, created_at
            FROM sensor_data
+           WHERE device_id IS NOT NULL
            ORDER BY created_at DESC
            LIMIT 20`,
         );

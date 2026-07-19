@@ -1,9 +1,9 @@
 /*
    KOLAMPINTAR - ESP32 pH monitor and acid solenoid controller
 
-   MQTT telemetry: pond/1/sensor
-   MQTT commands:  pond/1/control
-   MQTT presence:  pond/1/status
+   MQTT telemetry: device/{deviceUid}/sensor
+   MQTT commands:  device/{deviceUid}/control
+   MQTT presence:  device/{deviceUid}/status
 
    Required Arduino libraries:
    - PubSubClient by Nick O'Leary
@@ -19,7 +19,6 @@
 #include "secrets.h"
 
 // ---------- Device configuration ----------
-constexpr int POND_ID = 1;
 constexpr int PH_PIN = 34;
 constexpr int RELAY_PIN = 26;
 constexpr bool RELAY_ACTIVE_LOW = true;
@@ -55,9 +54,10 @@ unsigned long lastTelemetryAt = 0;
 unsigned long lastWifiAttemptAt = 0;
 unsigned long lastMqttAttemptAt = 0;
 
-char sensorTopic[32];
-char controlTopic[32];
-char statusTopic[32];
+char deviceUid[13];
+char sensorTopic[40];
+char controlTopic[40];
+char statusTopic[40];
 
 void setRelay(bool on) {
   digitalWrite(RELAY_PIN, RELAY_ACTIVE_LOW ? (on ? LOW : HIGH)
@@ -152,10 +152,8 @@ void connectMqttIfNeeded() {
   if (millis() - lastMqttAttemptAt < MQTT_RETRY_MS) return;
 
   lastMqttAttemptAt = millis();
-  char clientId[48];
-  const uint64_t chipId = ESP.getEfuseMac();
-  snprintf(clientId, sizeof(clientId), "esp32-pond-%d-%04X", POND_ID,
-           static_cast<uint16_t>(chipId));
+  char clientId[40];
+  snprintf(clientId, sizeof(clientId), "kolampintar-%s", deviceUid);
 
   Serial.printf("Menghubungkan MQTT ke %s:%u...\n", MQTT_HOST, MQTT_PORT);
   if (mqttClient.connect(clientId, statusTopic, 1, true, "offline")) {
@@ -204,9 +202,14 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Starting...");
 
-  snprintf(sensorTopic, sizeof(sensorTopic), "pond/%d/sensor", POND_ID);
-  snprintf(controlTopic, sizeof(controlTopic), "pond/%d/control", POND_ID);
-  snprintf(statusTopic, sizeof(statusTopic), "pond/%d/status", POND_ID);
+  const uint64_t chipId = ESP.getEfuseMac();
+  snprintf(deviceUid, sizeof(deviceUid), "%04X%08X",
+           static_cast<uint16_t>(chipId >> 32),
+           static_cast<uint32_t>(chipId));
+  snprintf(sensorTopic, sizeof(sensorTopic), "device/%s/sensor", deviceUid);
+  snprintf(controlTopic, sizeof(controlTopic), "device/%s/control", deviceUid);
+  snprintf(statusTopic, sizeof(statusTopic), "device/%s/status", deviceUid);
+  Serial.printf("Device UID: %s\n", deviceUid);
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);

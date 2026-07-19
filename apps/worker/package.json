@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "lint": "bun run typecheck",
+    "test": "bun test src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "bun build src/index.ts --target bun --outfile dist/index.js",
     "start": "bun run src/index.ts"

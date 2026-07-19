@@ -40,6 +40,11 @@ interface SensorData {
   created_at: string;
 }
 
+interface PondSummary {
+  pond_id: number;
+  connection_status: "online" | "offline";
+}
+
 function formatTime(timestamp: string) {
   return new Date(timestamp).toLocaleTimeString("id-ID", {
     hour: "2-digit",
@@ -60,11 +65,12 @@ export default function PondDetailPage({
   const [data, setData] = useState<SensorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastPollAt, setLastPollAt] = useState(0);
   const [controlLoadingTarget, setControlLoadingTarget] = useState<
     string | null
   >(null);
   const [allPondIds, setAllPondIds] = useState<number[]>([]);
+  const [currentPond, setCurrentPond] = useState<PondSummary | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
   const [journalRefreshKey, setJournalRefreshKey] = useState(0);
 
   const fetchData = useCallback(async () => {
@@ -74,7 +80,6 @@ export default function PondDetailPage({
 
       if (json.success) {
         setData(json.data);
-        setLastPollAt(Date.now());
         setError(null);
       } else {
         setError(json.error || "Gagal mengambil data");
@@ -91,24 +96,28 @@ export default function PondDetailPage({
       const res = await fetch("/api/ponds");
       const json = await res.json();
       if (json.success) {
-        setAllPondIds(
-          json.data.map((p: { pond_id: number }) => p.pond_id).sort(),
-        );
+        const ponds = json.data as PondSummary[];
+        setAllPondIds(ponds.map((p) => p.pond_id).sort((a, b) => a - b));
+        setCurrentPond(ponds.find((p) => p.pond_id === pondId) ?? null);
       }
     } catch {
       // fallback
     }
-  }, []);
+  }, [pondId]);
 
   useEffect(() => {
     fetchData();
     fetchPondIds();
-    const interval = setInterval(fetchData, 5000);
+    const interval = setInterval(() => {
+      fetchData();
+      fetchPondIds();
+    }, 5000);
     return () => clearInterval(interval);
   }, [fetchData, fetchPondIds]);
 
   const sendControl = async (value: "AUTO" | "ON" | "OFF") => {
     setControlLoadingTarget(value);
+    setControlError(null);
     try {
       const res = await fetch("/api/control", {
         method: "POST",
@@ -118,9 +127,13 @@ export default function PondDetailPage({
         ),
       });
       const json = await res.json();
-      if (json.success) await fetchData();
+      if (json.success) {
+        await Promise.all([fetchData(), fetchPondIds()]);
+      } else {
+        setControlError(json.error || "Gagal mengirim perintah kontrol");
+      }
     } catch {
-      console.error("Gagal mengirim perintah kontrol");
+      setControlError("Koneksi terputus saat mengirim perintah");
     } finally {
       setControlLoadingTarget(null);
     }
@@ -138,9 +151,7 @@ export default function PondDetailPage({
     latestRecord?.ph_level != null ? latestRecord.ph_level < 6.5 : false;
   const currentSolenoidState = latestRecord?.solenoid_state ?? "OFF";
   const currentControlMode = latestRecord?.control_mode ?? "AUTO";
-  const isDeviceOnline =
-    latestRecord !== null &&
-    lastPollAt - new Date(latestRecord.created_at).getTime() < 15000;
+  const isDeviceOnline = currentPond?.connection_status === "online";
 
   if (loading) {
     return (
@@ -161,7 +172,8 @@ export default function PondDetailPage({
           <div className="flex items-center gap-3">
             <Link
               href="/kolam"
-              className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              aria-label="Kembali ke semua kolam"
+              className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
@@ -186,9 +198,9 @@ export default function PondDetailPage({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium shadow-sm">
               <span className="relative flex h-2 w-2">
-                <span
-                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${error || !isDeviceOnline ? "bg-destructive" : "bg-success"}`}
-                ></span>
+                {isDeviceOnline && !error && (
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                )}
                 <span
                   className={`relative inline-flex rounded-full h-2 w-2 ${error || !isDeviceOnline ? "bg-destructive" : "bg-success"}`}
                 ></span>
@@ -405,8 +417,8 @@ export default function PondDetailPage({
                   <button
                     type="button"
                     onClick={() => sendControl("AUTO")}
-                    disabled={controlLoadingTarget !== null || currentControlMode === "AUTO"}
-                    className="flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50"
+                    disabled={!isDeviceOnline || controlLoadingTarget !== null || currentControlMode === "AUTO"}
+                    className="flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
                   >
                     Otomatis
                   </button>
@@ -415,9 +427,10 @@ export default function PondDetailPage({
                     onClick={() => sendControl("ON")}
                     disabled={
                       controlLoadingTarget !== null ||
+                      !isDeviceOnline ||
                       (currentControlMode === "MANUAL" && currentSolenoidState === "ON")
                     }
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:pointer-events-none disabled:opacity-50"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
                   >
                     <FlaskConical className="h-4 w-4" />
                     Buka
@@ -427,9 +440,10 @@ export default function PondDetailPage({
                     onClick={() => sendControl("OFF")}
                     disabled={
                       controlLoadingTarget !== null ||
+                      !isDeviceOnline ||
                       (currentControlMode === "MANUAL" && currentSolenoidState === "OFF")
                     }
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
                   >
                     Tutup
                   </button>
@@ -438,6 +452,16 @@ export default function PondDetailPage({
                 {controlLoadingTarget !== null && (
                   <p className="mt-3 text-xs text-muted-foreground animate-pulse text-center">
                     Mengirim perintah ke perangkat...
+                  </p>
+                )}
+                {!isDeviceOnline && (
+                  <p className="mt-3 text-center text-xs text-muted-foreground">
+                    Kontrol dinonaktifkan karena perangkat sedang offline.
+                  </p>
+                )}
+                {controlError && (
+                  <p role="alert" className="mt-3 text-center text-xs text-destructive">
+                    {controlError}
                   </p>
                 )}
               </CardContent>

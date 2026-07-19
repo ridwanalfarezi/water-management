@@ -56,7 +56,7 @@ In short:
 1. Install the ESP32 board package, PubSubClient, ArduinoJson, and LiquidCrystal I2C in Arduino IDE.
 2. Copy `hardware/esp32-kolampintar/secrets.example.h` to `secrets.h`.
 3. Enter the Wi-Fi credentials and the server computer's LAN IP in `secrets.h`.
-4. Verify `POND_ID`, pH calibration voltages, pins, and relay polarity in the sketch.
+4. Verify the pH calibration voltages, pins, and relay polarity in the sketch. The device identity is generated automatically from the ESP32 eFuse MAC.
 5. Upload the sketch and watch its Serial Monitor at 115200 baud.
 
 Do not use `localhost` as `MQTT_HOST` on the ESP32. Both devices must be reachable on the same network, and TCP port 1883 must be allowed through the server firewall.
@@ -67,9 +67,9 @@ For pond 1:
 
 | Direction | Topic |
 |---|---|
-| ESP32 to server | `pond/1/sensor` |
-| Dashboard to ESP32 | `pond/1/control` |
-| ESP32 availability | `pond/1/status` |
+| ESP32 to server | `device/{deviceUid}/sensor` |
+| Dashboard to ESP32 | `device/{deviceUid}/control` |
+| ESP32 availability | `device/{deviceUid}/status` |
 
 Telemetry:
 
