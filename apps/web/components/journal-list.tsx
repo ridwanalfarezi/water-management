@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BookOpen } from "lucide-react";
 
 interface JournalEntry {
@@ -23,6 +22,15 @@ const typeBadgeConfig: Record<string, { label: string; className: string }> = {
   sampling: { label: "Pengecekan air", className: "bg-purple-100 text-purple-700" },
   catatan: { label: "Catatan lainnya", className: "bg-zinc-100 text-zinc-700" },
 };
+
+function formatTime(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Jakarta",
+  });
+}
 
 export function JournalList({ pondId, refreshKey }: JournalListProps) {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -46,34 +54,24 @@ export function JournalList({ pondId, refreshKey }: JournalListProps) {
     fetchEntries();
   }, [fetchEntries, refreshKey]);
 
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  };
-
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center gap-2.5 pb-3">
+    <section className="h-full p-5 sm:p-6" aria-labelledby={`journal-list-title-${pondId}`}>
+      <div className="flex items-center gap-2.5">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-100">
-          <BookOpen className="h-3.5 w-3.5 text-zinc-600" />
+          <BookOpen className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
         </div>
-        <div>
-          <CardTitle className="text-sm font-semibold">Catatan Hari Ini</CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent>
+        <h3 id={`journal-list-title-${pondId}`} className="text-sm font-semibold">Catatan hari ini</h3>
+      </div>
+      <div className="mt-4">
         {loading ? (
           <div className="space-y-2.5">
             <div className="h-3.5 w-full animate-pulse rounded bg-zinc-100" />
             <div className="h-3.5 w-4/5 animate-pulse rounded bg-zinc-100" />
           </div>
         ) : entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Belum ada catatan hari ini.
-          </p>
+          <div className="rounded-lg bg-muted/60 px-4 py-5 text-sm text-muted-foreground">
+            Belum ada catatan hari ini. Tambahkan kegiatan penting agar riwayat kolam mudah ditelusuri.
+          </div>
         ) : (
           <div className="space-y-3">
             {entries.map((entry) => {
@@ -81,7 +79,7 @@ export function JournalList({ pondId, refreshKey }: JournalListProps) {
               return (
                 <div
                   key={entry.id}
-                  className="flex gap-3 rounded-lg border bg-zinc-50/50 p-3"
+                  className="flex gap-3 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
                 >
                   <div className="flex flex-col items-center gap-1 shrink-0 pt-0.5">
                     <span className="text-xs font-medium text-muted-foreground">
@@ -103,7 +101,7 @@ export function JournalList({ pondId, refreshKey }: JournalListProps) {
             })}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

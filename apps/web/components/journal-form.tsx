@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Send } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface JournalFormProps {
   pondId: number;
@@ -53,14 +52,14 @@ export function JournalForm({ pondId, onSaved }: JournalFormProps) {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-semibold">Catatan Kegiatan</CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
+    <section className="h-full p-5 sm:p-6" aria-labelledby={`journal-form-title-${pondId}`}>
+      <div>
+        <h3 id={`journal-form-title-${pondId}`} className="text-sm font-semibold">Catatan kegiatan</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
           Simpan kegiatan penting agar kondisi kolam mudah ditelusuri.
         </p>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="mt-4">
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label htmlFor={`journal-type-${pondId}`} className="sr-only">
@@ -70,7 +69,7 @@ export function JournalForm({ pondId, onSaved }: JournalFormProps) {
               id={`journal-type-${pondId}`}
               value={entryType}
               onChange={(e) => setEntryType(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+              className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {ENTRY_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
@@ -90,7 +89,7 @@ export function JournalForm({ pondId, onSaved }: JournalFormProps) {
               onChange={(e) => setContent(e.target.value)}
               placeholder="Contoh: memberi pakan 2 kg pukul 07.00"
               rows={2}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+              className="w-full resize-none rounded-md border border-input bg-background px-3 py-2.5 text-sm placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             />
           </div>
 
@@ -98,9 +97,9 @@ export function JournalForm({ pondId, onSaved }: JournalFormProps) {
             <button
               type="submit"
               disabled={saving || !content.trim()}
-              className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-zinc-300 disabled:text-zinc-600"
             >
-              <Send className="h-3.5 w-3.5" />
+              <Send className="h-4 w-4" aria-hidden="true" />
               {saving ? "Menyimpan..." : "Simpan catatan"}
             </button>
             {feedback && (
@@ -114,7 +113,7 @@ export function JournalForm({ pondId, onSaved }: JournalFormProps) {
             )}
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

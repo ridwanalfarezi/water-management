@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-19T22:54:33.6035428Z",
+  "title": "Design System: KolamPintar",
+  "extensions": {
+    "colorMeta": {
+      "operational-blue": {
+        "role": "primary",
+        "displayName": "Operational Blue",
+        "canonical": "#1457d4",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#60a5fa", "#bfdbfe", "#eff6ff"]
+      },
+      "operational-blue-deep": {
+        "role": "primary",
+        "displayName": "Operational Blue Deep",
+        "canonical": "#023990",
+        "tonalRamp": ["#172554", "#1e3a8a", "#1e40af", "#1d4ed8", "#2563eb", "#60a5fa", "#bfdbfe", "#eff6ff"]
+      },
+      "acid-lime-accent": {
+        "role": "secondary",
+        "displayName": "Acid-Lime Accent",
+        "canonical": "#cfe416",
+        "tonalRamp": ["#1a2e05", "#365314", "#4d7c0f", "#65a30d", "#84cc16", "#bef264", "#d9f99d", "#f7fee7"]
+      },
+      "field-background": {
+        "role": "neutral",
+        "displayName": "Field Background",
+        "canonical": "#fafafa",
+        "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#fafafa"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Clear Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#ffffff"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Instrument Ink",
+        "canonical": "#09090b",
+        "tonalRamp": ["#09090b", "#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#d4d4d8", "#fafafa"]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Instrument Ink",
+        "canonical": "#18181b",
+        "tonalRamp": ["#09090b", "#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#d4d4d8", "#fafafa"]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Structural Border",
+        "canonical": "#e4e4e7",
+        "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#fafafa"]
+      },
+      "muted-surface": {
+        "role": "neutral",
+        "displayName": "Muted Surface",
+        "canonical": "#f4f4f5",
+        "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#f4f4f5"]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#71717a",
+        "tonalRamp": ["#18181b", "#27272a", "#3f3f46", "#52525b", "#71717a", "#a1a1aa", "#e4e4e7", "#fafafa"]
+      },
+      "safe": {
+        "role": "tertiary",
+        "displayName": "Safe Green",
+        "canonical": "#10b981",
+        "tonalRamp": ["#022c22", "#064e3b", "#065f46", "#047857", "#10b981", "#6ee7b7", "#d1fae5", "#ecfdf5"]
+      },
+      "safe-surface": {
+        "role": "tertiary",
+        "displayName": "Safe Surface",
+        "canonical": "#ecfdf5",
+        "tonalRamp": ["#022c22", "#064e3b", "#065f46", "#047857", "#10b981", "#6ee7b7", "#d1fae5", "#ecfdf5"]
+      },
+      "safe-ink": {
+        "role": "tertiary",
+        "displayName": "Safe Ink",
+        "canonical": "#064e3b",
+        "tonalRamp": ["#022c22", "#064e3b", "#065f46", "#047857", "#10b981", "#6ee7b7", "#d1fae5", "#ecfdf5"]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Attention Amber",
+        "canonical": "#f59e0b",
+        "tonalRamp": ["#451a03", "#78350f", "#92400e", "#b45309", "#f59e0b", "#fcd34d", "#fef3c7", "#fffbeb"]
+      },
+      "warning-surface": {
+        "role": "tertiary",
+        "displayName": "Attention Surface",
+        "canonical": "#fffbeb",
+        "tonalRamp": ["#451a03", "#78350f", "#92400e", "#b45309", "#f59e0b", "#fcd34d", "#fef3c7", "#fffbeb"]
+      },
+      "warning-ink": {
+        "role": "tertiary",
+        "displayName": "Attention Ink",
+        "canonical": "#92400e",
+        "tonalRamp": ["#451a03", "#78350f", "#92400e", "#b45309", "#f59e0b", "#fcd34d", "#fef3c7", "#fffbeb"]
+      },
+      "critical": {
+        "role": "tertiary",
+        "displayName": "Critical Red",
+        "canonical": "#ef4444",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#ef4444", "#f87171", "#fecaca", "#fef2f2"]
+      },
+      "critical-surface": {
+        "role": "tertiary",
+        "displayName": "Critical Surface",
+        "canonical": "#fef2f2",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#ef4444", "#f87171", "#fecaca", "#fef2f2"]
+      },
+      "critical-ink": {
+        "role": "tertiary",
+        "displayName": "Critical Ink",
+        "canonical": "#7f1d1d",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#ef4444", "#f87171", "#fecaca", "#fef2f2"]
+      },
+      "informational": {
+        "role": "tertiary",
+        "displayName": "Informational Sky",
+        "canonical": "#0ea5e9",
+        "tonalRamp": ["#082f49", "#0c4a6e", "#075985", "#0369a1", "#0ea5e9", "#7dd3fc", "#bae6fd", "#f0f9ff"]
+      },
+      "informational-surface": {
+        "role": "tertiary",
+        "displayName": "Informational Surface",
+        "canonical": "#f0f9ff",
+        "tonalRamp": ["#082f49", "#0c4a6e", "#075985", "#0369a1", "#0ea5e9", "#7dd3fc", "#bae6fd", "#f0f9ff"]
+      },
+      "informational-ink": {
+        "role": "tertiary",
+        "displayName": "Informational Ink",
+        "canonical": "#075985",
+        "tonalRamp": ["#082f49", "#0c4a6e", "#075985", "#0369a1", "#0ea5e9", "#7dd3fc", "#bae6fd", "#f0f9ff"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Primary Reading",
+        "purpose": "Large pH values and exceptional product-level emphasis."
+      },
+      "title": {
+        "displayName": "Operational Title",
+        "purpose": "Page, pond, and card headings."
+      },
+      "body": {
+        "displayName": "Operator Copy",
+        "purpose": "Guidance, explanations, and journal content."
+      },
+      "label": {
+        "displayName": "Status Label",
+        "purpose": "Status, metadata, control labels, and short measurements."
+      },
+      "technical": {
+        "displayName": "Technical Detail",
+        "purpose": "Device identifiers and protocol evidence inside progressive disclosure."
+      },
+      "micro": {
+        "displayName": "Micro Label",
+        "purpose": "Existing short badges and measurement units only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "resting-surface",
+        "value": "0 1px 3px rgb(0 0 0 / 0.10), 0 1px 2px -1px rgb(0 0 0 / 0.10)",
+        "purpose": "Existing cards and compact raised status surfaces."
+      },
+      {
+        "name": "interactive-lift",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.10)",
+        "purpose": "Clickable pond summaries on hover only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Tabs and compact state changes."
+      },
+      {
+        "name": "interaction-standard",
+        "value": "200ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Button, card, and link feedback."
+      },
+      {
+        "name": "semantic-change",
+        "value": "300ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Changes between safe, warning, and critical container states."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The safest recommended action, with explicit hover, focus, active, and disabled states.",
+      "html": "<button class=\"ds-btn-primary\">Aktifkan otomatis</button>",
+      "css": ".ds-btn-primary { background: var(--color-primary); color: var(--color-primary-foreground); padding: 8px 16px; border: 0; border-radius: 6px; font: 500 14px/1.25 var(--font-sans); transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { opacity: .9; } .ds-btn-primary:active { opacity: .82; } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: .5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A neutral bordered action that remains visually subordinate to the primary action.",
+      "html": "<button class=\"ds-btn-secondary\">Hentikan aliran</button>",
+      "css": ".ds-btn-secondary { background: var(--color-background); color: var(--color-foreground); padding: 8px 16px; border: 1px solid var(--color-border); border-radius: 6px; font: 500 14px/1.25 var(--font-sans); transition: background 200ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-secondary:hover { background: var(--color-accent); } .ds-btn-secondary:active { background: var(--color-muted); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; } .ds-btn-secondary:disabled { opacity: .5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Content Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A structural surface for related content, flat except for the existing resting shadow.",
+      "html": "<section class=\"ds-card\"><h3>Kondisi kolam</h3><p>Status dan bacaan terbaru.</p></section>",
+      "css": ".ds-card { background: var(--color-card); color: var(--color-card-foreground); padding: 24px; border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 1px 3px rgb(0 0 0 / .10), 0 1px 2px -1px rgb(0 0 0 / .10); } .ds-card h3 { margin: 0 0 8px; font: 600 16px/1.25 var(--font-sans); } .ds-card p { margin: 0; color: var(--color-muted-foreground); font: 400 14px/1.625 var(--font-sans); } .ds-card:focus-within { outline: 2px solid var(--color-primary); outline-offset: 2px; }"
+    },
+    {
+      "name": "Journal Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A compact operational field with an explicit focus state.",
+      "html": "<label class=\"ds-field-label\" for=\"ds-note\">Isi catatan</label><textarea class=\"ds-field\" id=\"ds-note\" placeholder=\"Contoh: memberi pakan 2 kg\"></textarea>",
+      "css": ".ds-field-label { display: block; margin-bottom: 4px; color: var(--color-foreground); font: 500 12px/1.333 var(--font-sans); } .ds-field { width: 100%; min-height: 64px; background: var(--color-background); color: var(--color-foreground); padding: 8px 12px; border: 1px solid var(--color-input); border-radius: 6px; font: 400 14px/1.5 var(--font-sans); resize: vertical; } .ds-field:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; } .ds-field:disabled { opacity: .65; cursor: not-allowed; }"
+    },
+    {
+      "name": "Safe Status",
+      "kind": "chip",
+      "refersTo": "status-safe",
+      "description": "A written safe or connected state reinforced by green.",
+      "html": "<span class=\"ds-status-safe\"><span aria-hidden=\"true\"></span>Alat terhubung</span>",
+      "css": ".ds-status-safe { display: inline-flex; align-items: center; gap: 6px; background: var(--color-success-bg); color: var(--color-success-foreground); padding: 4px 12px; border-radius: 9999px; font: 500 12px/1.333 var(--font-sans); } .ds-status-safe > span { width: 6px; height: 6px; border-radius: 9999px; background: var(--color-success); } .ds-status-safe:focus-visible { outline: 2px solid var(--color-success); outline-offset: 2px; }"
+    },
+    {
+      "name": "Warning Status",
+      "kind": "chip",
+      "refersTo": "status-warning",
+      "description": "A written inspection or uncertainty state reinforced by amber.",
+      "html": "<span class=\"ds-status-warning\"><span aria-hidden=\"true\"></span>Perlu diperiksa</span>",
+      "css": ".ds-status-warning { display: inline-flex; align-items: center; gap: 6px; background: #fffbeb; color: #92400e; padding: 4px 12px; border-radius: 9999px; font: 500 12px/1.333 var(--font-sans); } .ds-status-warning > span { width: 6px; height: 6px; border-radius: 9999px; background: #f59e0b; } .ds-status-warning:focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; }"
+    },
+    {
+      "name": "Critical Status",
+      "kind": "chip",
+      "refersTo": "status-critical",
+      "description": "A written disconnected or critical state reinforced by red.",
+      "html": "<span class=\"ds-status-critical\"><span aria-hidden=\"true\"></span>Alat tidak terhubung</span>",
+      "css": ".ds-status-critical { display: inline-flex; align-items: center; gap: 6px; background: var(--color-destructive-bg); color: var(--color-destructive-foreground); padding: 4px 12px; border-radius: 9999px; font: 500 12px/1.333 var(--font-sans); } .ds-status-critical > span { width: 6px; height: 6px; border-radius: 9999px; background: var(--color-destructive); } .ds-status-critical:focus-visible { outline: 2px solid var(--color-destructive); outline-offset: 2px; }"
+    },
+    {
+      "name": "Pond Selector",
+      "kind": "nav",
+      "description": "A compact set of pond links with one explicit active state.",
+      "html": "<nav class=\"ds-pond-selector\" aria-label=\"Pilih kolam\"><a class=\"ds-pond-active\" href=\"#\">Kolam 1</a><a href=\"#\">Kolam 2</a></nav>",
+      "css": ".ds-pond-selector { display: flex; gap: 6px; padding: 4px; overflow-x: auto; background: var(--color-muted); border-radius: 8px; } .ds-pond-selector a { flex: 0 0 auto; color: var(--color-muted-foreground); padding: 6px 14px; border-radius: 6px; font: 500 14px/1.25 var(--font-sans); text-decoration: none; transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1), background 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-pond-selector a:hover { color: var(--color-foreground); background: rgb(255 255 255 / .5); } .ds-pond-selector a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; } .ds-pond-selector .ds-pond-active { color: var(--color-foreground); background: var(--color-card); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Field Instrument",
+    "overview": "KolamPintar should feel like a dependable instrument an operator can read beside a pond in bright daylight: quiet at rest, unmistakable when attention is required, and explicit whenever a control request crosses from the dashboard to physical hardware. The interface serves the task; it does not perform for the user.\n\nThe visual system is restrained and state-led. Operational blue establishes identity, semantic colors communicate pond and device conditions, and the acid-lime brand accent remains rare. Familiar components and plain Indonesian copy build trust. The system explicitly rejects the generic SaaS dashboard: decorative gradients, glass surfaces, repetitive cards, and vague AI-first emphasis are forbidden.",
+    "keyCharacteristics": [
+      "Calm, compact, and readable in bright ambient light.",
+      "Status text and hardware evidence always accompany color.",
+      "Familiar controls with explicit focus, disabled, loading, and acknowledgement states.",
+      "Technical detail is available through progressive disclosure.",
+      "Competition credibility comes from real telemetry and traceable behavior."
+    ],
+    "rules": [
+      {
+        "name": "The Meaning Before Hue Rule",
+        "body": "Every semantic color must be paired with a written label or recognizable icon; color alone never carries status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Rare Accent Rule",
+        "body": "Acid-lime is identity punctuation, not decoration. It should occupy less than ten percent of any screen.",
+        "section": "colors"
+      },
+      {
+        "name": "The Reading Order Rule",
+        "body": "Current value, written status, and recency outrank explanation, history, and technical detail.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Product Scale Rule",
+        "body": "Product typography uses stable rem sizes; fluid display type and oversized marketing headings are prohibited.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Borders organize resting content. Shadow appears only to communicate selection, hover, or elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do lead every pond screen with pH, connection, control mode, flow state, and freshness in a stable reading order.",
+      "Do distinguish requested, sent, applied, late, rejected, and timed-out control states in plain Indonesian.",
+      "Do pair semantic color with text and preserve WCAG 2.2 AA contrast, keyboard focus, reduced motion, and 200% zoom behavior.",
+      "Do keep secondary AI summaries, journals, and device identifiers below operational status or behind progressive disclosure.",
+      "Do use the existing 6px control radius, 12px card radius, and 4px-based spacing rhythm consistently."
+    ],
+    "donts": [
+      "Don't resemble a generic SaaS dashboard through decorative gradients, glass effects, vague AI-first messaging, or an endless grid of identical cards.",
+      "Don't imply physical liquid flow merely because a command was published or acknowledged.",
+      "Don't use color, animation, or a pulsing dot as the only carrier of risk or connectivity.",
+      "Don't introduce new fonts, radii, shadows, or hard-coded colors without updating this design system.",
+      "Don't let competition presentation displace the operator's primary monitoring and safety tasks."
+    ]
+  }
+}

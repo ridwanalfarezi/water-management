@@ -21,7 +21,7 @@ export function TechnicalDetails({
 
   return (
     <details className="group text-xs text-muted-foreground">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-sm px-1 font-medium text-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
         {summary}
         <ChevronDown
           className="h-3.5 w-3.5 transition-transform group-open:rotate-180"

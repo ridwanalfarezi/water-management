@@ -9,20 +9,24 @@ interface PondSelectorProps {
 
 export function PondSelector({ currentPondId, pondIds }: PondSelectorProps) {
   return (
-    <div className="flex items-center gap-1.5 rounded-lg bg-zinc-100 p-1">
+    <nav
+      aria-label="Pilih kolam"
+      className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1"
+    >
       {pondIds.map((id) => (
         <Link
           key={id}
           href={`/kolam/${id}`}
-          className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+          aria-current={id === currentPondId ? "page" : undefined}
+          className={`inline-flex min-h-11 shrink-0 items-center rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
             id === currentPondId
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-700 hover:bg-white/50"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-card/70 hover:text-foreground"
           }`}
         >
           Kolam {id}
         </Link>
       ))}
-    </div>
+    </nav>
   );
 }

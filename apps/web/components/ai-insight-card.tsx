@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Sparkles } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface AIInsightCardProps {
   pondId?: number;
@@ -37,18 +36,15 @@ export function AIInsightCard({ pondId }: AIInsightCardProps) {
   }, [fetchInsight]);
 
   return (
-    <Card className="relative overflow-hidden">
-      {/* Subtle gradient accent */}
-      <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-zinc-400/40 to-transparent" />
-
-      <CardHeader className="flex flex-row items-center gap-2.5 pb-3">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800">
-          <Sparkles className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
+    <article className="h-full p-5 sm:p-6">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-700">
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
         </div>
-        <CardTitle className="text-sm font-semibold">Saran untuk Kolam</CardTitle>
-      </CardHeader>
+        <h3 className="text-sm font-semibold">Saran untuk kolam</h3>
+      </div>
 
-      <CardContent>
+      <div className="mt-4">
         {loading ? (
           <div className="space-y-2.5">
             <div className="h-3.5 w-full animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
@@ -57,10 +53,10 @@ export function AIInsightCard({ pondId }: AIInsightCardProps) {
           </div>
         ) : (
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {insight}
+            {insight ?? "Belum ada saran tambahan untuk kondisi saat ini."}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }

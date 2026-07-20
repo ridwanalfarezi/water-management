@@ -122,4 +122,24 @@ docker compose up -d --build
 docker compose down
 ```
 
+## Design workflow
+
+KolamPintar includes the project-local Impeccable skill under `.agents/skills/impeccable`. Its product strategy and extracted visual system are documented in [`PRODUCT.md`](PRODUCT.md) and [`DESIGN.md`](DESIGN.md); the initial responsive assessment is in [`.impeccable/baseline-audit.md`](.impeccable/baseline-audit.md).
+
+The project uses manual design checks rather than an automatic post-edit hook. From Codex, invoke `$impeccable` commands directly and use Codex's bundled Node 24 runtime for the offline detector (shown as `node` below):
+
+```powershell
+node .agents/skills/impeccable/scripts/detect.mjs --json apps/web
+```
+
+The expected setup baseline is one `overused-font` warning for the existing global Inter loading. Inter is intentionally preserved until a dedicated `$impeccable typeset` review.
+
+Recommended sequence:
+
+1. `$impeccable critique the pond list and pond detail pages` for the first assessment.
+2. `$impeccable adapt the pond dashboard for 390px, 768px, and 1280px viewports` for responsive behavior.
+3. `$impeccable harden loading, empty, offline, stale-data, error, and command-acknowledgement states` for operational resilience.
+4. `$impeccable polish the pond dashboard` after approved fixes.
+5. Optionally use `$impeccable live` for the mobile header, status hierarchy, pond cards, and empty state; its safe injection point is configured in `.impeccable/live/config.json`.
+
 See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) for calibration, multi-pond setup, API commands, and troubleshooting.

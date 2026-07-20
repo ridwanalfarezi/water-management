@@ -21,6 +21,7 @@
   --color-card-foreground: #09090b;
   --color-border: #e4e4e7;
   --color-input: #e4e4e7;
+  --color-ring: #1457d4;
   --color-muted: #f4f4f5;
   --color-muted-foreground: #71717a;
   --color-accent: #f4f4f5;
@@ -30,6 +31,12 @@
   --color-success: #10b981;
   --color-success-bg: #ecfdf5;
   --color-success-foreground: #064e3b;
+  --color-warning: #f59e0b;
+  --color-warning-bg: #fffbeb;
+  --color-warning-foreground: #92400e;
+  --color-info: #0ea5e9;
+  --color-info-bg: #f0f9ff;
+  --color-info-foreground: #075985;
   --color-destructive: #ef4444;
   --color-destructive-bg: #fef2f2;
   --color-destructive-foreground: #7f1d1d;
@@ -38,9 +45,29 @@
 /* Base styles */
 @layer base {
   body {
+    min-width: 320px;
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-primary) 18%, white);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

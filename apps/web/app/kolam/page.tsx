@@ -1,7 +1,7 @@
 "use client";
 
 import { PondCard } from "@/components/pond-card";
-import { Activity, Droplets } from "lucide-react";
+import { AlertCircle, Droplets, RefreshCw } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 
@@ -49,21 +49,9 @@ export default function SemuaKolamPage() {
   ).length;
   const offlineCount = ponds.length - onlineCount;
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4 text-muted-foreground">
-          <Activity className="h-8 w-8 animate-pulse text-muted-foreground/50" />
-          <p className="text-sm font-medium">Sedang mengambil kondisi kolam...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background pb-12">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b bg-background/80 px-6 py-4 backdrop-blur-md">
+      <header className="sticky top-0 z-10 border-b bg-background px-4 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white p-1">
@@ -79,61 +67,95 @@ export default function SemuaKolamPage() {
               <h1 className="text-base font-semibold leading-none tracking-tight text-primary-dark">
                 KolamPintar
               </h1>
-              <p className="text-xs text-muted-foreground mt-1">Daftar kolam</p>
+              <p className="mt-1 text-xs text-muted-foreground">Daftar kolam</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium shadow-sm">
-              <span className="relative flex h-2 w-2">
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex min-h-9 items-center gap-2 rounded-full border bg-card px-3 text-xs font-medium"
+            >
+              <span className="relative flex h-2 w-2" aria-hidden="true">
                 <span
-                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${error ? "bg-destructive" : "bg-success"}`}
+                  className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${loading ? "animate-pulse bg-info" : error ? "bg-destructive" : "bg-success"}`}
                 ></span>
                 <span
-                  className={`relative inline-flex rounded-full h-2 w-2 ${error ? "bg-destructive" : "bg-success"}`}
+                  className={`relative inline-flex h-2 w-2 rounded-full ${loading ? "bg-info" : error ? "bg-destructive" : "bg-success"}`}
                 ></span>
               </span>
-              {error ? "Data belum terhubung" : "Data terbaru"}
+              {loading ? "Memuat data" : error ? "Data belum terhubung" : "Data terbaru"}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 pt-8">
-        {/* Error */}
+      <main className="mx-auto max-w-5xl px-4 pt-6 sm:px-6 sm:pt-8">
         {error && (
-          <div className="mb-8 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive flex items-center gap-3">
-            {error}
+          <div role="alert" className="mb-6 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <p>{error}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void fetchPonds()}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-4 font-semibold text-red-800 transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Coba lagi
+            </button>
           </div>
         )}
 
-        {/* Summary Bar */}
-        <div className="mb-6 flex items-center gap-4 text-sm">
-          <span className="font-semibold text-zinc-900">
-            {ponds.length} Kolam
-          </span>
-          <div className="h-4 w-px bg-zinc-200" />
-          <div className="flex items-center gap-3">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">Kondisi semua kolam</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Lihat status air dan koneksi alat sebelum membuka rincian kolam.
+            </p>
+          </div>
+          {!loading && ponds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" aria-label={`${ponds.length} kolam terdaftar`}>
+              <span className="font-semibold text-foreground">{ponds.length} kolam</span>
             {onlineCount > 0 && (
-              <span className="flex items-center gap-1.5 text-emerald-600">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="flex items-center gap-1.5 text-emerald-800">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
                 {onlineCount} alat aktif
               </span>
             )}
             {offlineCount > 0 && (
-              <span className="flex items-center gap-1.5 text-zinc-600">
-                <span className="h-2 w-2 rounded-full bg-zinc-500" />
+                <span className="flex items-center gap-1.5 text-zinc-700">
+                  <span className="h-2 w-2 rounded-full bg-zinc-500" aria-hidden="true" />
                 {offlineCount} alat tidak terhubung
               </span>
             )}
           </div>
+          )}
         </div>
 
-        {/* Pond Grid */}
-        {ponds.length === 0 ? (
-          <div className="rounded-xl border-2 border-dashed px-6 py-20 text-center text-muted-foreground">
-            <Droplets className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p className="text-sm font-medium">Belum ada kolam yang terhubung</p>
-            <p className="mx-auto mt-1 max-w-sm text-xs">
+        {loading ? (
+          <div aria-label="Memuat daftar kolam" aria-busy="true" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="min-h-48 animate-pulse rounded-xl border bg-card p-5">
+                <div className="flex justify-between gap-4">
+                  <div className="h-5 w-24 rounded bg-muted" />
+                  <div className="h-5 w-28 rounded-full bg-muted" />
+                </div>
+                <div className="mt-8 h-9 w-20 rounded bg-muted" />
+                <div className="mt-8 h-px bg-border" />
+                <div className="mt-4 h-4 w-40 rounded bg-muted" />
+              </div>
+            ))}
+            <span className="sr-only">Sedang mengambil kondisi kolam...</span>
+          </div>
+        ) : ponds.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-card px-6 py-12 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+              <Droplets className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-foreground">Belum ada kolam yang terhubung</p>
+            <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
               Pastikan alat kolam menyala dan tersambung ke Wi-Fi. Kolam akan muncul otomatis di sini.
             </p>
           </div>

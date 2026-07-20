@@ -7,6 +7,7 @@ import { JournalList } from "@/components/journal-list";
 import { PondSelector } from "@/components/pond-selector";
 import { TechnicalDetails } from "@/components/technical-details";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import dynamic from "next/dynamic";
 import {
   type CommandStatus,
   getCommandFeedbackCopy,
@@ -21,23 +22,25 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  Clock3,
   FlaskConical,
   Loader2,
+  RefreshCw,
+  SlidersHorizontal,
   Wifi,
+  Waves,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+
+const PhChart = dynamic(
+  () => import("@/components/ph-chart").then((module) => module.PhChart),
+  {
+    ssr: false,
+    loading: () => <div className="h-72 animate-pulse rounded-xl border bg-card sm:h-80" aria-label="Memuat grafik pH" />,
+  },
+);
 
 interface SensorData {
   id: number;
@@ -82,6 +85,7 @@ function formatTime(timestamp: string) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
+    timeZone: "Asia/Jakarta",
   });
 }
 
@@ -270,12 +274,12 @@ export default function PondDetailPage({
   }));
 
   const latestRecord = data.length > 0 ? data[0] : null;
-  const isHighPH =
-    latestRecord?.ph_level != null ? latestRecord.ph_level > 7.5 : false;
-  const isLowPH =
-    latestRecord?.ph_level != null ? latestRecord.ph_level < 6.5 : false;
-  const currentSolenoidState = latestRecord?.solenoid_state ?? "OFF";
-  const currentControlMode = latestRecord?.control_mode ?? "AUTO";
+  const currentPh = latestRecord?.ph_level ?? null;
+  const hasPhReading = currentPh !== null;
+  const isHighPH = currentPh !== null ? currentPh > 7.5 : false;
+  const isLowPH = currentPh !== null ? currentPh < 6.5 : false;
+  const currentSolenoidState = latestRecord?.solenoid_state ?? null;
+  const currentControlMode = latestRecord?.control_mode ?? null;
   const isDeviceOnline = currentPond?.connection_status === "online";
   const flowLabel = getFlowLabel(latestRecord?.solenoid_state ?? null);
   const modeLabel = getModeLabel(latestRecord?.control_mode ?? null);
@@ -289,10 +293,23 @@ export default function PondDetailPage({
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4 text-muted-foreground">
-          <Activity className="h-8 w-8 animate-pulse text-muted-foreground/50" />
-          <p className="text-sm font-medium">Sedang mengambil kondisi kolam...</p>
+      <div className="min-h-screen bg-background" aria-busy="true">
+        <div className="border-b bg-background px-4 py-3 sm:px-6 sm:py-4">
+          <div className="mx-auto flex max-w-5xl items-center gap-3">
+            <div className="h-11 w-11 animate-pulse rounded-md bg-muted" />
+            <div className="space-y-2">
+              <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-36 animate-pulse rounded bg-muted" />
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto max-w-5xl space-y-6 px-4 pt-6 sm:px-6 sm:pt-8">
+          <div className="h-52 animate-pulse rounded-xl border bg-card" />
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="h-64 animate-pulse rounded-xl border bg-card" />
+            <div className="h-40 animate-pulse rounded-xl border bg-card" />
+          </div>
+          <span className="sr-only">Sedang mengambil kondisi kolam...</span>
         </div>
       </div>
     );
@@ -300,18 +317,17 @@ export default function PondDetailPage({
 
   return (
     <div className="min-h-screen bg-background pb-12">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b bg-background/80 px-6 py-4 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-10 border-b bg-background px-4 py-3 sm:px-6 sm:py-4">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/kolam"
               aria-label="Kembali ke semua kolam"
-              className="flex h-8 w-8 items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white p-1">
+            <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white p-1 sm:flex">
               <Image
                 src="/logo-pict.png"
                 alt="KolamPintar Logo"
@@ -320,7 +336,7 @@ export default function PondDetailPage({
                 className="object-contain"
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-base font-semibold leading-none tracking-tight text-primary-dark">
                 Kolam {pondId}
               </h1>
@@ -330,8 +346,8 @@ export default function PondDetailPage({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium shadow-sm">
-              <span className="relative flex h-2 w-2">
+            <div role="status" aria-live="polite" className="flex min-h-9 items-center gap-2 rounded-full border bg-card px-3 text-xs font-medium">
+              <span className="relative flex h-2 w-2" aria-hidden="true">
                 {isDeviceOnline && !error && (
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
                 )}
@@ -347,7 +363,7 @@ export default function PondDetailPage({
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 pt-8">
+      <main className="mx-auto max-w-5xl px-4 pt-6 sm:px-6 sm:pt-8">
         {/* Pond Selector */}
         {allPondIds.length > 1 && (
           <div className="mb-6">
@@ -357,68 +373,72 @@ export default function PondDetailPage({
 
         {/* Connection Error */}
         {error && (
-          <div className="mb-8 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive flex items-center gap-3">
-            <AlertCircle className="h-4 w-4" />
-            {error}
+          <div role="alert" className="mb-6 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <p>{error}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void Promise.all([fetchData(), fetchPondIds()])}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-4 font-semibold text-red-800 transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Coba lagi
+            </button>
           </div>
         )}
 
         <div className="grid gap-6">
-          {/* Top Section: Overview Cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  pH Air
-                </CardTitle>
-                <FlaskConical
-                  className={`h-4 w-4 ${isHighPH || isLowPH ? "text-amber-500" : "text-muted-foreground"}`}
-                />
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-baseline gap-1">
-                  <div
-                    className={`text-2xl font-bold tracking-tight ${isHighPH || isLowPH ? "text-amber-600" : "text-foreground"}`}
-                  >
-                    {latestRecord?.ph_level?.toFixed(2) ?? "--"}
-                  </div>
+          <section className="overflow-hidden rounded-xl border bg-card" aria-labelledby="pond-status-title">
+            <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <FlaskConical className="h-4 w-4" aria-hidden="true" />
+                  <h2 id="pond-status-title">pH air saat ini</h2>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Aliran pengatur pH
-                </CardTitle>
-                <FlaskConical
-                  className={`h-4 w-4 ${currentSolenoidState === "ON" ? "text-amber-500" : "text-muted-foreground"}`}
-                />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tracking-tight">
-                  {flowLabel}
-                  <span className="ml-2 text-xs font-medium text-muted-foreground">
-                    {modeLabel}
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className={`text-4xl font-bold tracking-tight ${isHighPH || isLowPH ? "text-amber-700" : "text-foreground"}`}>
+                    {currentPh?.toFixed(2) ?? "--"}
                   </span>
+                  <span className="text-sm font-medium text-muted-foreground">pH</span>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Kekuatan sinyal
-                </CardTitle>
-                <Wifi className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tracking-tight">
-                  {signalLabel}
+              </div>
+              <div className="flex flex-col gap-2 sm:items-end">
+                <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${!hasPhReading ? "bg-sky-100 text-sky-800" : isHighPH || isLowPH ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                  <span className={`h-2 w-2 rounded-full ${!hasPhReading ? "bg-sky-500" : isHighPH || isLowPH ? "bg-amber-500" : "bg-emerald-500"}`} aria-hidden="true" />
+                  {!hasPhReading ? "Menunggu bacaan" : isHighPH || isLowPH ? "Perlu diperiksa" : "Dalam rentang aman"}
+                </span>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {latestRecord ? `Diperbarui pukul ${formatTime(latestRecord.created_at)}` : "Belum ada waktu pembacaan"}
+                </span>
+              </div>
+            </div>
+            <dl className="grid border-t sm:grid-cols-3 sm:divide-x">
+              <div className="flex items-center gap-3 border-b p-4 last:border-b-0 sm:border-b-0 sm:p-5">
+                <Waves className={`h-5 w-5 shrink-0 ${currentSolenoidState === "ON" ? "text-amber-700" : "text-muted-foreground"}`} aria-hidden="true" />
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Aliran pengatur pH</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-foreground">{flowLabel}</dd>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+              <div className="flex items-center gap-3 border-b p-4 last:border-b-0 sm:border-b-0 sm:p-5">
+                <SlidersHorizontal className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Mode kendali</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-foreground">{modeLabel}</dd>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-4 sm:p-5">
+                <Wifi className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Kekuatan sinyal</dt>
+                  <dd className="mt-0.5 text-sm font-semibold text-foreground">{signalLabel}</dd>
+                </div>
+              </div>
+            </dl>
+          </section>
 
           <TechnicalDetails
             items={[
@@ -426,7 +446,9 @@ export default function PondDetailPage({
               {
                 label: "Terakhir terhubung",
                 value: currentPond?.last_seen_at
-                  ? new Date(currentPond.last_seen_at).toLocaleString("id-ID")
+                  ? new Date(currentPond.last_seen_at).toLocaleString("id-ID", {
+                      timeZone: "Asia/Jakarta",
+                    })
                   : null,
               },
               { label: "Mode sistem", value: currentPond?.control_mode },
@@ -445,141 +467,37 @@ export default function PondDetailPage({
             ]}
           />
 
-          {/* Middle Section: Chart */}
-          <Card className="overflow-hidden">
-            <CardHeader className="border-b bg-muted/20 pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">
-                  Perubahan pH
-                </CardTitle>
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-2 w-2 rounded-full bg-amber-500" />
-                    <span className="text-muted-foreground font-medium">
-                      pH
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {chartData.length === 0 ? (
-                <div className="flex h-87.5 items-center justify-center text-sm text-muted-foreground">
-                  Menunggu bacaan pH...
-                </div>
-              ) : (
-                <div className="h-87.5 w-full pt-6 pr-6 pb-2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                      data={chartData}
-                      margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="var(--border)"
-                        className="opacity-50"
-                      />
-                      <XAxis
-                        dataKey="time"
-                        stroke="var(--muted-foreground)"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                        dy={8}
-                      />
-                      <YAxis
-                        yAxisId="ph"
-                        stroke="var(--muted-foreground)"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                        dx={-8}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "8px",
-                          border: "1px solid var(--border)",
-                          boxShadow:
-                            "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-                          fontSize: "12px",
-                          backgroundColor: "var(--card)",
-                          color: "var(--card-foreground)",
-                        }}
-                        itemStyle={{
-                          color: "var(--foreground)",
-                          fontWeight: 500,
-                        }}
-                        labelStyle={{
-                          color: "var(--muted-foreground)",
-                          marginBottom: "4px",
-                        }}
-                      />
-                      <ReferenceLine
-                        yAxisId="ph"
-                        y={7.5}
-                        stroke="#f59e0b"
-                        strokeDasharray="4 4"
-                        opacity={0.5}
-                        label={{
-                          position: "insideTopLeft",
-                          value: "Batas atas pH 7.5",
-                          fill: "#f59e0b",
-                          fontSize: 10,
-                          dy: -10,
-                        }}
-                      />
-                      <Line
-                        yAxisId="ph"
-                        type="monotone"
-                        dataKey="ph"
-                        name="pH"
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <PhChart data={chartData} isDeviceOnline={isDeviceOnline} />
 
-          {/* AI Cards */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <AIInsightCard pondId={pondId} />
-            <AISummaryCard pondId={pondId} />
-          </div>
-
-          {/* Journal Section */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <JournalForm
-              pondId={pondId}
-              onSaved={() => setJournalRefreshKey((k) => k + 1)}
-            />
-            <JournalList pondId={pondId} refreshKey={journalRefreshKey} />
-          </div>
-
-          {/* Bottom Section: Controls & Alerts */}
+          {/* Primary controls and operational guidance */}
           <div className="grid gap-6 md:grid-cols-2">
             {/* Left: Flow Control */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">
-                  Pengaturan aliran pH
+                  Kendali aliran pengatur pH
                 </CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Saat mode otomatis aktif, alat mengatur aliran cairan berdasarkan bacaan pH.
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Perubahan baru dianggap berhasil setelah alat mengirim konfirmasi.
                 </p>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <dl className="mb-4 grid grid-cols-2 divide-x rounded-lg bg-muted/70 py-3">
+                  <div className="px-3">
+                    <dt className="text-xs text-muted-foreground">Mode saat ini</dt>
+                    <dd className="mt-0.5 text-sm font-semibold">{modeLabel}</dd>
+                  </div>
+                  <div className="px-3">
+                    <dt className="text-xs text-muted-foreground">Aliran saat ini</dt>
+                    <dd className="mt-0.5 text-sm font-semibold">{flowLabel}</dd>
+                  </div>
+                </dl>
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                   <button
                     type="button"
                     onClick={() => sendControl("AUTO")}
                     disabled={!isDeviceOnline || controlLoadingTarget !== null || currentControlMode === "AUTO"}
-                    className="flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-zinc-300 disabled:text-zinc-600"
                   >
                     Aktifkan otomatis
                   </button>
@@ -591,9 +509,9 @@ export default function PondDetailPage({
                       !isDeviceOnline ||
                       (currentControlMode === "MANUAL" && currentSolenoidState === "ON")
                     }
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                    className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md bg-amber-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-amber-100 disabled:text-amber-900"
                   >
-                    <FlaskConical className="h-4 w-4" />
+                    <FlaskConical className="h-4 w-4" aria-hidden="true" />
                     Mulai aliran
                   </button>
                   <button
@@ -604,7 +522,7 @@ export default function PondDetailPage({
                       !isDeviceOnline ||
                       (currentControlMode === "MANUAL" && currentSolenoidState === "OFF")
                     }
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+                    className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-semibold transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-zinc-100 disabled:text-zinc-500"
                   >
                     Hentikan aliran
                   </button>
@@ -652,7 +570,7 @@ export default function PondDetailPage({
                     )}
                 </div>
                 {!isDeviceOnline && (
-                  <p className="mt-3 text-center text-xs text-muted-foreground">
+                  <p className="mt-3 rounded-md bg-muted px-3 py-2 text-center text-xs text-muted-foreground">
                     Pengaturan belum dapat digunakan karena alat tidak terhubung.
                   </p>
                 )}
@@ -667,8 +585,10 @@ export default function PondDetailPage({
             {/* Right: Alerts Panel */}
             <div className="flex flex-col justify-end">
               <div
-                className={`overflow-hidden rounded-xl border p-5 shadow-sm transition-colors duration-300 ${
-                  isHighPH || isLowPH
+                className={`overflow-hidden rounded-xl border p-5 transition-colors duration-200 ${
+                  !hasPhReading
+                    ? "border-sky-200 bg-sky-50"
+                    : isHighPH || isLowPH
                     ? "bg-amber-50 border-amber-200"
                     : "bg-emerald-50 border-emerald-200"
                 }`}
@@ -676,12 +596,16 @@ export default function PondDetailPage({
                 <div className="flex items-start gap-4">
                   <div
                     className={`mt-0.5 rounded-full p-1.5 ${
-                      isHighPH || isLowPH
+                      !hasPhReading
+                        ? "bg-sky-100 text-sky-700"
+                        : isHighPH || isLowPH
                         ? "bg-amber-100 text-amber-600"
                         : "bg-emerald-100 text-emerald-600"
                     }`}
                   >
-                    {isHighPH || isLowPH ? (
+                    {!hasPhReading ? (
+                      <Activity className="h-5 w-5" aria-hidden="true" />
+                    ) : isHighPH || isLowPH ? (
                       <AlertCircle className="h-5 w-5" />
                     ) : (
                       <CheckCircle2 className="h-5 w-5" />
@@ -690,17 +614,21 @@ export default function PondDetailPage({
                   <div>
                     <h4
                       className={`text-sm font-semibold ${
-                        isHighPH || isLowPH ? "text-amber-800" : "text-emerald-800"
+                        !hasPhReading ? "text-sky-900" : isHighPH || isLowPH ? "text-amber-800" : "text-emerald-800"
                       }`}
                     >
-                      {isHighPH ? "pH Tinggi" : isLowPH ? "pH Rendah" : "pH Stabil"}
+                      {!hasPhReading ? "Menunggu bacaan pH" : isHighPH ? "pH tinggi" : isLowPH ? "pH rendah" : "pH stabil"}
                     </h4>
                     <p
                       className={`mt-1 text-sm ${
-                        isHighPH || isLowPH ? "text-amber-700" : "text-emerald-700"
+                        !hasPhReading ? "text-sky-800" : isHighPH || isLowPH ? "text-amber-700" : "text-emerald-700"
                       }`}
                     >
-                      {isHighPH
+                      {!hasPhReading
+                        ? isDeviceOnline
+                          ? "Alat terhubung, tetapi belum mengirim bacaan. Tunggu pembaruan berikutnya sebelum mengambil tindakan."
+                          : "Alat tidak terhubung dan kondisi air belum dapat dipastikan. Periksa alat di kolam."
+                        : isHighPH
                         ? "pH berada di atas batas aman. Dalam mode otomatis, alat mengatur aliran cairan untuk menurunkannya. Pantau perubahan pH secara berkala."
                         : isLowPH
                           ? "pH berada di bawah batas aman. Aliran cairan dihentikan. Periksa kondisi air sebelum melakukan tindakan berikutnya."
@@ -711,6 +639,35 @@ export default function PondDetailPage({
               </div>
             </div>
           </div>
+
+          <section aria-labelledby="journal-title">
+            <div className="mb-3">
+              <h2 id="journal-title" className="text-base font-semibold">Riwayat kegiatan</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Catat tindakan yang dapat menjelaskan perubahan kondisi air.</p>
+            </div>
+            <div className="overflow-hidden rounded-xl border bg-card md:grid md:grid-cols-2 md:divide-x">
+              <JournalForm
+                pondId={pondId}
+                onSaved={() => setJournalRefreshKey((k) => k + 1)}
+              />
+              <div className="border-t md:border-t-0">
+                <JournalList pondId={pondId} refreshKey={journalRefreshKey} />
+              </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="analysis-title">
+            <div className="mb-3">
+              <h2 id="analysis-title" className="text-base font-semibold">Analisis pendukung</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Gunakan rangkuman ini sebagai konteks tambahan; status alat dan bacaan pH di atas tetap menjadi acuan utama.</p>
+            </div>
+            <div className="overflow-hidden rounded-xl border bg-card md:grid md:grid-cols-2 md:divide-x">
+              <AIInsightCard pondId={pondId} />
+              <div className="border-t md:border-t-0">
+                <AISummaryCard pondId={pondId} />
+              </div>
+            </div>
+          </section>
         </div>
       </main>
     </div>

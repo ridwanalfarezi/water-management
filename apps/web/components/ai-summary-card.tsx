@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Sun } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface AISummaryCardProps {
   pondId: number;
@@ -34,17 +33,15 @@ export function AISummaryCard({ pondId }: AISummaryCardProps) {
   }, [fetchSummary]);
 
   return (
-    <Card className="relative overflow-hidden">
-      <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-amber-400/40 to-transparent" />
-
-      <CardHeader className="flex flex-row items-center gap-2.5 pb-3">
+    <article className="h-full p-5 sm:p-6">
+      <div className="flex items-center gap-2.5">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50">
-          <Sun className="h-3.5 w-3.5 text-amber-600" />
+          <Sun className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
         </div>
-        <CardTitle className="text-sm font-semibold">Ringkasan Kondisi</CardTitle>
-      </CardHeader>
+        <h3 className="text-sm font-semibold">Ringkasan kondisi</h3>
+      </div>
 
-      <CardContent>
+      <div className="mt-4">
         {loading ? (
           <div className="space-y-2.5">
             <div className="h-3.5 w-full animate-pulse rounded bg-zinc-100" />
@@ -53,10 +50,10 @@ export function AISummaryCard({ pondId }: AISummaryCardProps) {
           </div>
         ) : (
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {summary}
+            {summary ?? "Ringkasan belum tersedia. Status utama tetap dapat dibaca di atas."}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }

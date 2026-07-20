@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, FlaskConical } from "lucide-react";
+import { ArrowRight, Clock3, FlaskConical } from "lucide-react";
 import Link from "next/link";
 import { getPondStatusLabel } from "@/lib/user-copy";
 
@@ -50,6 +50,7 @@ function formatLastSeen(timestamp: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: "Asia/Jakarta",
   });
 }
 
@@ -70,54 +71,53 @@ export function PondCard({
   return (
     <Link
       href={`/kolam/${pondId}`}
-      className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="group block h-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       aria-label={`Buka Kolam ${pondId}, status ${statusLabel}`}
     >
-      <div
-        className={`relative rounded-xl border ${cfg.border} ${cfg.bg} p-5 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5`}
+      <article
+        className={`flex h-full min-h-48 flex-col rounded-xl border ${cfg.border} ${cfg.bg} p-5 transition-colors duration-200 group-hover:border-primary/40`}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between gap-3">
           <h3 className="text-base font-semibold text-zinc-900">
             Kolam {pondId}
           </h3>
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.badge}`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} aria-hidden="true" />
             {statusLabel}
           </span>
         </div>
 
-        {/* Metrics */}
-        <div className="grid grid-cols-1 gap-3">
-          <div className="flex flex-col items-center gap-1 rounded-lg bg-white/60 p-3">
+        <div className="mt-7 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-zinc-600">pH saat ini</p>
+            <div className="mt-1 flex items-center gap-2">
             <FlaskConical
-              className={`h-4 w-4 ${phOutsideTarget ? "text-amber-500" : "text-zinc-500"}`}
+                className={`h-5 w-5 ${phOutsideTarget ? "text-amber-600" : "text-zinc-500"}`}
+                aria-hidden="true"
             />
             <span
-              className={`text-lg font-bold ${phOutsideTarget ? "text-amber-600" : "text-zinc-900"}`}
+                className={`text-3xl font-bold tracking-tight ${phOutsideTarget ? "text-amber-700" : "text-zinc-950"}`}
             >
               {phLevel?.toFixed(1) ?? "--"}
             </span>
-            <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
-              pH
-            </span>
           </div>
+          </div>
+          <span className="inline-flex min-h-11 items-center gap-2 rounded-md border border-current/10 bg-white/70 px-3 text-sm font-semibold text-zinc-700 transition-colors group-hover:bg-white group-hover:text-primary-dark">
+            Buka
+            <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
+          </span>
         </div>
 
-        {/* Footer action */}
-        <div className="mt-4 flex items-center justify-between gap-3 text-xs font-medium text-zinc-500">
+        <div className="mt-auto flex items-center gap-2 border-t border-current/10 pt-4 text-xs font-medium text-zinc-600">
+          <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
             {connectionStatus === "online" ? "Diperbarui" : "Terakhir terhubung"}{" "}
             pukul {formatLastSeen(lastSeenAt)}
           </span>
-          <span className="flex items-center gap-1 transition-colors group-hover:text-zinc-800">
-            Buka kolam
-            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-          </span>
         </div>
-      </div>
+      </article>
     </Link>
   );
 }
