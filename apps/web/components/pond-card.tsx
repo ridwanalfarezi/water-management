@@ -70,10 +70,11 @@ export function PondCard({
     phLevel !== null && (phLevel < 6.5 || phLevel > 8.5);
 
   return (
+    <div>
     <Link
       href={`/kolam/${pondId}`}
       className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      aria-label={`Buka Kolam ${pondId}, status ${statusLabel}`}
+      aria-label={`Buka monitor Kolam ${pondId}, status ${statusLabel}`}
     >
       <div
         className={`relative rounded-xl border ${cfg.border} ${cfg.bg} p-5 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5`}
@@ -115,11 +116,13 @@ export function PondCard({
             pukul {formatLastSeen(lastSeenAt)}
           </span>
           <span className="flex items-center gap-1 transition-colors group-hover:text-zinc-800">
-            Buka kolam
+            Monitor audience
             <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
           </span>
         </div>
       </div>
     </Link>
+    <Link href={`/kolam/${pondId}/kontrol`} className="mt-2 flex min-h-11 items-center justify-center rounded-md border border-input bg-card px-3 text-sm font-medium text-primary-dark hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Kontrol staff · Kolam {pondId}</Link>
+    </div>
   );
 }
