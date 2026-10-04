@@ -19,10 +19,10 @@ const SYSTEM_INSTRUCTION = `Kamu adalah pendamping petambak ikan yang menjelaska
 Berikan saran singkat berdasarkan bacaan pH terbaru.
 
 Aturan:
-- Gunakan istilah "alat" dan "aliran cairan pengatur pH"
-- Jika pH > 7.5, jelaskan bahwa pH di atas batas aman dan alat otomatis mulai mengatur aliran
-- Jika pH < 6.5, jelaskan bahwa pH di bawah batas aman, aliran dihentikan, dan kondisi air perlu diperiksa
-- Jika pH 6.5-7.5, sampaikan bahwa pH aman
+- Data pH merupakan simulasi expo; valve diperagakan melalui tahap demo, tanpa bahan koreksi pH
+- Jika pH > 8.5, jelaskan bahwa pH simulasi melewati batas atas demo
+- Jika pH < 6.5, jelaskan bahwa pH simulasi melewati batas bawah; lanjutkan tahap demo untuk memperagakan respons valve
+- Jika pH 6.5-8.5, sampaikan bahwa pH simulasi berada dalam rentang normal demo
 - Berikan tindakan yang dapat langsung dilakukan
 
 Format respons:
@@ -60,7 +60,7 @@ ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan alat: jika pH > 7.5 maka aliran cairan pengatur pH dimulai, lalu dihentikan setelah pH < 7.3
+Aturan demo: batas pH 6.5–8.5. Valve dibuka oleh tahap ACTIVE dan ditutup otomatis setelah 3 detik; jangan menyimpulkan posisi valve hanya dari pH.
 
 Analisis dan beri saran.`;
 }
@@ -247,17 +247,17 @@ function generateFallbackInsight(rows: SensorRow[]): string {
     parts.push(
       "Belum ada bacaan pH. Pastikan alat menyala dan sensor terpasang dengan baik.",
     );
-  } else if (latest.ph_level > 7.5) {
+  } else if (latest.ph_level > 8.5) {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada di atas batas aman. Alat otomatis mengatur aliran cairan pengatur pH.`,
+      `pH simulasi saat ini ${latest.ph_level.toFixed(1)} dan melewati batas atas demo. Pantau perubahan pada grafik.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada di bawah batas aman. Aliran dihentikan; periksa kondisi air.`,
+      `pH simulasi saat ini ${latest.ph_level.toFixed(1)} dan melewati batas bawah demo. Lanjutkan tahap demo untuk memperagakan respons valve.`,
     );
   } else {
     parts.push(
-      `pH saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang aman. Tidak ada tindakan tambahan saat ini.`,
+      `pH simulasi saat ini ${latest.ph_level.toFixed(1)} dan berada dalam rentang normal demo.`,
     );
   }
 

@@ -8,6 +8,7 @@ import {
   resolveAckStatus,
 } from "./command-protocol";
 import { parseDeviceTopic } from "./device-protocol";
+import { parseDemoTelemetry, type DemoTelemetry } from "./demo-protocol";
 
 const { Pool } = pg;
 
@@ -26,7 +27,10 @@ type SolenoidState = "ON" | "OFF";
 type ControlMode = "AUTO" | "MANUAL";
 
 interface SensorPayload {
-  ph: number;
+  demo?: DemoTelemetry;
+  // pH is optional: solenoid-only controllers (no pH probe) send heartbeats
+  // with mode/solenoid/rssi only. Absent pH stores NULL (belum_ada_data).
+  ph: number | null;
   temperature?: number;
   do?: number;
   solenoid?: SolenoidState;
@@ -81,6 +85,11 @@ async function migrateDatabase(): Promise<void> {
     ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS solenoid_state VARCHAR(3);
     ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS control_mode VARCHAR(10);
     ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS rssi INTEGER;
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS data_source VARCHAR(12);
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS demo_step VARCHAR(12);
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS demo_paused BOOLEAN;
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS demo_revision BIGINT;
+    ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS demo_session VARCHAR(16);
     ALTER TABLE sensor_data ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices(id);
     ALTER TABLE control_log ADD COLUMN IF NOT EXISTS device_id INTEGER REFERENCES devices(id);
     ALTER TABLE control_log ADD COLUMN IF NOT EXISTS command_id UUID;
@@ -115,8 +124,16 @@ function parseSensorPayload(value: unknown): SensorPayload | null {
   if (!value || typeof value !== "object") return null;
 
   const payload = value as Record<string, unknown>;
-  if (!isFiniteNumber(payload.ph) || payload.ph < 0 || payload.ph > 14) {
-    return null;
+  const demo = parseDemoTelemetry(payload);
+  if (payload.dataSource !== undefined && !demo) return null;
+  // pH optional (solenoid-only controllers have no probe); when present it
+  // must be a valid 0–14 reading.
+  let ph: number | null = null;
+  if (payload.ph !== undefined) {
+    if (!isFiniteNumber(payload.ph) || payload.ph < 0 || payload.ph > 14) {
+      return null;
+    }
+    ph = payload.ph;
   }
   if (
     payload.temperature !== undefined &&
@@ -136,7 +153,8 @@ function parseSensorPayload(value: unknown): SensorPayload | null {
       : undefined;
 
   return {
-    ph: payload.ph,
+    demo: demo ?? undefined,
+    ph,
     temperature: payload.temperature as number | undefined,
     do: payload.do as number | undefined,
     solenoid,
@@ -212,22 +230,28 @@ async function saveSensorData(
     const pondId = await registerDevice(client, deviceUid);
     await client.query(
       `INSERT INTO sensor_data
-         (pond_id, device_id, temperature, do_level, ph_level, solenoid_state, control_mode, rssi, created_at)
-       VALUES ($1, $1, $2, $3, $4, $5, $6, $7, NOW())`,
+         (pond_id, device_id, temperature, do_level, ph_level, solenoid_state, control_mode, rssi,
+          data_source, demo_step, demo_paused, demo_revision, demo_session, created_at)
+       VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
       [
         pondId,
         payload.temperature ?? null,
         payload.do ?? null,
-        payload.ph,
+        payload.ph ?? null,
         payload.solenoid ?? null,
         payload.mode ?? null,
         payload.rssi ?? null,
+        payload.demo?.dataSource ?? null,
+        payload.demo?.demoStep ?? null,
+        payload.demo?.demoPaused ?? null,
+        payload.demo?.demoRevision ?? null,
+        payload.demo?.demoSession ?? null,
       ],
     );
     await client.query("COMMIT");
 
     console.log(
-      `[Worker] Saved device=${deviceUid} pond=${pondId} ph=${payload.ph.toFixed(2)} solenoid=${payload.solenoid ?? "unknown"} mode=${payload.mode ?? "unknown"}`,
+      `[Worker] Saved device=${deviceUid} pond=${pondId} ph=${payload.ph === null ? "n/a" : payload.ph.toFixed(2)} solenoid=${payload.solenoid ?? "unknown"} mode=${payload.mode ?? "unknown"}`,
     );
   } catch (error) {
     await client.query("ROLLBACK");
@@ -353,6 +377,9 @@ async function main(): Promise<void> {
 
   console.log(`[Worker] Connecting to MQTT at ${MQTT_URL}...`);
   const client = mqtt.connect(MQTT_URL, {
+    // Unique per process start: sharing an ID with another client makes the
+    // broker kick one session off, which surfaces as flapping online status.
+    clientId: `kolampintar-worker-${process.pid}-${Math.random().toString(16).slice(2, 10)}`,
     reconnectPeriod: 3000,
     connectTimeout: 10000,
   });

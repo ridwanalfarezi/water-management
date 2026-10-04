@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 
 interface PondData {
   pond_id: number;
+  data_source: string | null;
   temperature: number | null;
   do_level: number | null;
   ph_level: number | null;
@@ -23,7 +24,8 @@ export default function SemuaKolamPage() {
 
   const fetchPonds = useCallback(async () => {
     try {
-      const res = await fetch("/api/ponds");
+      const res = await fetch("/api/ponds", { cache: "no-store" });
+      if (!res.ok) throw new Error("Kondisi kolam belum tersedia");
       const json = await res.json();
       if (json.success) {
         setPonds(json.data);
@@ -40,7 +42,7 @@ export default function SemuaKolamPage() {
 
   useEffect(() => {
     fetchPonds();
-    const interval = setInterval(fetchPonds, 5000);
+    const interval = setInterval(fetchPonds, 1000);
     return () => clearInterval(interval);
   }, [fetchPonds]);
 
@@ -147,6 +149,7 @@ export default function SemuaKolamPage() {
                 connectionStatus={pond.connection_status}
                 waterStatus={pond.water_status}
                 lastSeenAt={pond.last_seen_at}
+                simulated={pond.data_source === "SIMULATION"}
               />
             ))}
           </div>

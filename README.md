@@ -1,5 +1,7 @@
 # KolamPintar
 
+> **Branch `codex/expo-demo`: firmware menggunakan pH simulasi dan menggerakkan valve fisik melalui urutan demo.** Tidak ada pilihan mode expo. Gunakan [EXPO_DEMO.md](EXPO_DEMO.md) untuk menjalankan, meng-upload, dan menguji versi ini. Penjelasan kontrol sensor/asam di bawah adalah dokumentasi versi utama, bukan perilaku firmware branch expo.
+
 KolamPintar monitors pond pH from a physical ESP32 and controls an acid-dosing solenoid. Automatic hysteresis runs on the ESP32, so pH control continues if Wi-Fi, MQTT, or the web server becomes unavailable.
 
 ## Architecture

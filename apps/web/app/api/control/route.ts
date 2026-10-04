@@ -1,15 +1,10 @@
 import pool from "@/lib/db";
 import { getMqttClient } from "@/lib/mqtt";
+import { parseDemoCommand } from "@/lib/demo";
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
-type ControlPayload =
-  | { commandId: string; mode: "AUTO" }
-  | {
-      commandId: string;
-      mode: "MANUAL";
-      solenoid: "ON" | "OFF";
-    };
+type ControlPayload = { commandId: string } & NonNullable<ReturnType<typeof parseDemoCommand>>;
 
 function databaseErrorCode(error: unknown): string | undefined {
   if (!error || typeof error !== "object" || !("code" in error)) return undefined;
@@ -24,6 +19,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const pondId = Number(body.pondId);
+    const demoCommand = parseDemoCommand(body);
+    if (!demoCommand) {
+      return NextResponse.json({ success: false, error: "Perintah demo tidak valid. Muat ulang status perangkat." }, { status: 400 });
+    }
 
     if (!Number.isInteger(pondId) || pondId <= 0) {
       return NextResponse.json(
@@ -63,24 +62,15 @@ export async function POST(request: NextRequest) {
     let requestedMode: "AUTO" | "MANUAL";
     let requestedSolenoid: "ON" | "OFF" | null;
 
-    if (body.mode === "AUTO") {
-      payload = { commandId, mode: "AUTO" };
-      action = "SOLENOID_AUTO";
-      requestedMode = "AUTO";
-      requestedSolenoid = null;
-    } else if (body.solenoid === "ON" || body.solenoid === "OFF") {
-      payload = { commandId, mode: "MANUAL", solenoid: body.solenoid };
-      action = `SOLENOID_${body.solenoid}`;
-      requestedMode = "MANUAL";
-      requestedSolenoid = body.solenoid;
-    } else {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Send mode 'AUTO' or solenoid 'ON'/'OFF'",
-        },
-        { status: 400 },
-      );
+    payload = { commandId, ...demoCommand };
+    action = `DEMO_${demoCommand.demoAction}`;
+    requestedMode = "MANUAL";
+    requestedSolenoid = demoCommand.demoAction === "STOP" || demoCommand.demoAction === "RESET" || demoCommand.demoAction === "PAUSE" ? "OFF" : null;
+
+    // Closing commands must not wait behind an unacknowledged story command.
+    if (demoCommand.demoAction === "STOP" || demoCommand.demoAction === "RESET") {
+      await pool.query(`UPDATE control_log SET status = 'TIMED_OUT', timed_out_at = NOW()
+        WHERE device_id = $1 AND status IN ('PENDING', 'SENT')`, [pondId]);
     }
 
     try {

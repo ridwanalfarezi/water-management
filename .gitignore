@@ -14,6 +14,8 @@ pgdata/
 .env.local
 .env*.local
 hardware/**/secrets.h
+hardware/**/tests/*.exe
+apps/web/.bun-tmp/
 
 # OS
 .DS_Store

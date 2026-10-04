@@ -44,3 +44,14 @@
     -webkit-font-smoothing: antialiased;
   }
 }
+
+.expo-alert-dialog::backdrop { background: rgb(9 9 11 / 55%); }
+.expo-siren-lights { display: flex; }
+.expo-siren-lights span { width: 50%; background: #dc2626; animation: expo-siren-light 1.5s ease-in-out infinite; }
+.expo-siren-lights span + span { animation-delay: -0.75s; }
+.expo-siren-icon { animation: expo-siren-pulse 1.5s ease-in-out infinite; }
+@keyframes expo-siren-light { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes expo-siren-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) {
+  .expo-siren-lights span, .expo-siren-icon { animation: none; }
+}

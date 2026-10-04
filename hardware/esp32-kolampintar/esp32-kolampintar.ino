@@ -1,5 +1,5 @@
 /*
-   KOLAMPINTAR - ESP32 pH monitor and acid solenoid controller
+   KOLAMPINTAR - Expo firmware: simulated pH, physical valve
 
    MQTT telemetry: device/{deviceUid}/sensor
    MQTT commands:  device/{deviceUid}/control
@@ -18,28 +18,18 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <esp_timer.h>
 #include "secrets.h"
+#include "demo-sequence.h"
 
 // ---------- Device configuration ----------
-constexpr int PH_PIN = 34;
 constexpr int RELAY_PIN = 26;
 constexpr bool RELAY_ACTIVE_LOW = true;
 
-// Acid dosing hysteresis: open above 7.5, close below 7.3.
-constexpr float PH_MAX_ON = 7.5F;
-constexpr float PH_MAX_OFF = 7.3F;
-
-// Replace these values with your two-point calibration results.
-constexpr float PH_7_VOLTAGE = 2.4F;
-constexpr float PH_4_VOLTAGE = 2.9F;
-
 constexpr unsigned long LCD_INTERVAL_MS = 1000;
-constexpr unsigned long TELEMETRY_INTERVAL_MS = 5000;
+constexpr unsigned long TELEMETRY_INTERVAL_MS = 500;
 constexpr unsigned long WIFI_RETRY_MS = 5000;
 constexpr unsigned long MQTT_RETRY_MS = 10000;
-
-// Safety: a manual ON command returns to AUTO after one minute.
-constexpr unsigned long MANUAL_ON_TIMEOUT_MS = 60000;
 
 enum ControlMode { AUTO_MODE, MANUAL_MODE };
 
@@ -47,10 +37,12 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-ControlMode controlMode = AUTO_MODE;
+ControlMode controlMode = MANUAL_MODE;
+DemoSequence demo;
+char demoSession[17];
 bool relayState = false;
-float latestPH = 7.0F;
-unsigned long manualOnStartedAt = 0;
+float latestPH = 7.5F;
+esp_timer_handle_t valveTimer;
 unsigned long lastLcdAt = 0;
 unsigned long lastTelemetryAt = 0;
 unsigned long lastWifiAttemptAt = 0;
@@ -65,51 +57,32 @@ char lastCommandId[37] = "";
 char lastAckPayload[320] = "";
 
 void setRelay(bool on) {
+  if (on == relayState) return;
+  if (on) {
+    // The independent ESP timer closes the GPIO even during a blocked MQTT call.
+    if (esp_timer_start_once(valveTimer, DemoSequence::VALVE_MS * 1000ULL) != ESP_OK) {
+      demo.command("STOP", millis());
+      return;
+    }
+  } else if (valveTimer) {
+    esp_timer_stop(valveTimer);
+  }
   digitalWrite(RELAY_PIN, RELAY_ACTIVE_LOW ? (on ? LOW : HIGH)
                                            : (on ? HIGH : LOW));
   relayState = on;
-  if (!on) manualOnStartedAt = 0;
 }
 
-float readPH() {
-  const int raw = analogRead(PH_PIN);
-  const float voltage = raw * (3.3F / 4095.0F);
-  float ph = 7.0F +
-             ((voltage - PH_7_VOLTAGE) /
-              (PH_7_VOLTAGE - PH_4_VOLTAGE) * 3.0F);
-  return constrain(ph, 0.0F, 14.0F);
+void closeValve(void*) {
+  digitalWrite(RELAY_PIN, RELAY_ACTIVE_LOW ? HIGH : LOW);
 }
 
-float readAveragePH(int samples = 10) {
-  float total = 0.0F;
-  for (int i = 0; i < samples; i++) {
-    total += readPH();
-    delay(30);
-  }
-  return total / samples;
+void updateDemo() {
+  demo.tick(millis());
+  latestPH = demo.ph;
+  setRelay(demo.valve);
 }
 
-void applyAutomaticControl() {
-  if (controlMode != AUTO_MODE) return;
-
-  if (latestPH > PH_MAX_ON && !relayState) {
-    setRelay(true);
-    Serial.println("pH tinggi -> solenoid ON");
-  } else if (latestPH < PH_MAX_OFF && relayState) {
-    setRelay(false);
-    Serial.println("pH normal -> solenoid OFF");
-  }
-}
-
-void applyManualSafetyTimeout() {
-  if (controlMode == MANUAL_MODE && relayState && manualOnStartedAt != 0 &&
-      millis() - manualOnStartedAt >= MANUAL_ON_TIMEOUT_MS) {
-    Serial.println("Manual ON timeout -> kembali ke AUTO");
-    setRelay(false);
-    controlMode = AUTO_MODE;
-    applyAutomaticControl();
-  }
-}
+void publishTelemetry();
 
 bool isValidCommandId(const char* commandId) {
   if (commandId == nullptr || strlen(commandId) != 36) return false;
@@ -156,7 +129,7 @@ void publishRejectedAck(const char* commandId, const char* reason) {
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<256> document;
+  StaticJsonDocument<512> document;
   const DeserializationError error =
       deserializeJson(document, payload, length);
   if (error) {
@@ -176,32 +149,22 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  const char* mode = document["mode"] | "";
-  if (strcmp(mode, "AUTO") == 0) {
-    controlMode = AUTO_MODE;
-    setRelay(false);
-    applyAutomaticControl();
-    Serial.println("Mode -> AUTO");
-    publishAppliedAck(commandId);
+  const char* action = document["demoAction"] | "";
+  const bool closing = !strcmp(action, "RESET") || !strcmp(action, "STOP");
+  const char* session = document["demoSession"] | "";
+  if (!closing && (strcmp(session, demoSession) ||
+      !document["demoRevision"].is<unsigned long>() ||
+      document["demoRevision"].as<unsigned long>() != demo.revision)) {
+    publishRejectedAck(commandId, "STALE_DEMO_STATE");
     return;
   }
-
-  const char* solenoid = document["solenoid"] | "";
-  if (strcmp(mode, "MANUAL") == 0 && strcmp(solenoid, "ON") == 0) {
-    controlMode = MANUAL_MODE;
-    setRelay(true);
-    manualOnStartedAt = millis();
-    Serial.println("Mode -> MANUAL, solenoid ON");
-    publishAppliedAck(commandId);
-  } else if (strcmp(mode, "MANUAL") == 0 && strcmp(solenoid, "OFF") == 0) {
-    controlMode = MANUAL_MODE;
-    setRelay(false);
-    Serial.println("Mode -> MANUAL, solenoid OFF");
-    publishAppliedAck(commandId);
-  } else {
-    Serial.println("Perintah ditolak: payload mode/solenoid tidak valid");
-    publishRejectedAck(commandId, "INVALID_PAYLOAD");
+  if (!demo.command(action, millis())) {
+    publishRejectedAck(commandId, "INVALID_DEMO_TRANSITION");
+    return;
   }
+  updateDemo();
+  publishAppliedAck(commandId);
+  publishTelemetry();
 }
 
 void connectWifiIfNeeded() {
@@ -227,6 +190,7 @@ void connectMqttIfNeeded() {
     mqttClient.subscribe(controlTopic, 1);
     mqttClient.publish(statusTopic, "online", true);
     publishLastAck();
+    publishTelemetry();
     Serial.printf("MQTT terhubung, subscribe %s\n", controlTopic);
   } else {
     Serial.printf("MQTT gagal, rc=%d\n", mqttClient.state());
@@ -236,13 +200,18 @@ void connectMqttIfNeeded() {
 void publishTelemetry() {
   if (!mqttClient.connected()) return;
 
-  StaticJsonDocument<192> document;
+  StaticJsonDocument<384> document;
   document["ph"] = roundf(latestPH * 100.0F) / 100.0F;
   document["solenoid"] = relayState ? "ON" : "OFF";
   document["mode"] = controlMode == AUTO_MODE ? "AUTO" : "MANUAL";
   document["rssi"] = WiFi.RSSI();
+  document["dataSource"] = "SIMULATION";
+  document["demoStep"] = demo.name();
+  document["demoPaused"] = demo.paused;
+  document["demoRevision"] = demo.revision;
+  document["demoSession"] = demoSession;
 
-  char message[192];
+  char message[384];
   serializeJson(document, message, sizeof(message));
   mqttClient.publish(sensorTopic, message, false);
   Serial.printf("Telemetri %s -> %s\n", sensorTopic, message);
@@ -256,13 +225,22 @@ void updateLcd() {
 
   lcd.setCursor(0, 1);
   lcd.print(relayState ? "Sol:ON " : "Sol:OFF");
-  lcd.print(controlMode == AUTO_MODE ? " AUTO " : " MAN  ");
+  lcd.print(" DEMO ");
 }
 
 void setup() {
   Serial.begin(115200);
+  snprintf(demoSession, sizeof(demoSession), "%08X%08X", esp_random(), esp_random());
+  demo.randomState = esp_random() | 1U;
   pinMode(RELAY_PIN, OUTPUT);
-  setRelay(false);  // Fail safe: acid flow is OFF during boot.
+  digitalWrite(RELAY_PIN, RELAY_ACTIVE_LOW ? HIGH : LOW);
+  esp_timer_create_args_t timerArgs = {};
+  timerArgs.callback = closeValve;
+  timerArgs.name = "valve-off";
+  if (esp_timer_create(&timerArgs, &valveTimer) != ESP_OK) {
+    Serial.println("Valve timer unavailable: keep valve OFF");
+    while (true) delay(1000);
+  }
 
   lcd.init();
   lcd.backlight();
@@ -295,14 +273,15 @@ void setup() {
 }
 
 void loop() {
-  // Local control is always evaluated before any network reconnect attempt.
-  latestPH = readAveragePH();
-  applyAutomaticControl();
-  applyManualSafetyTimeout();
+  // Avoid blocking reconnects while the physical valve is open.
+  updateDemo();
 
-  connectWifiIfNeeded();
-  connectMqttIfNeeded();
+  if (!relayState) {
+    connectWifiIfNeeded();
+    connectMqttIfNeeded();
+  }
   mqttClient.loop();
+  updateDemo();
 
   const unsigned long now = millis();
   if (now - lastLcdAt >= LCD_INTERVAL_MS) {

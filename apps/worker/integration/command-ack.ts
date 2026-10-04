@@ -10,6 +10,7 @@ const DATABASE_URL =
 const API_URL = process.env.API_URL || "http://localhost:3000";
 const DEVICE_UID = "ACCE55000001";
 const WRONG_DEVICE_UID = "ACCE55000002";
+const DEMO_SESSION = "0123456789ABCDEF";
 
 type AckBehavior = "apply" | "ignore" | "wrong-device";
 
@@ -59,7 +60,7 @@ async function postControl(body: Record<string, unknown>) {
   const response = await fetch(`${API_URL}/api/control`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ demoSession: DEMO_SESSION, demoRevision: 0, ...body }),
   });
   return { response, json: await response.json() };
 }
@@ -116,8 +117,7 @@ async function main() {
       void (async () => {
         const command = JSON.parse(buffer.toString()) as {
           commandId?: string;
-          mode?: string;
-          solenoid?: string;
+          demoAction?: string;
         };
         if (!command.commandId) return;
         const previous = acknowledgements.get(command.commandId);
@@ -127,8 +127,8 @@ async function main() {
         }
         if (behavior === "ignore") return;
 
-        const mode = command.mode === "AUTO" ? "AUTO" : "MANUAL";
-        const solenoid = mode === "AUTO" ? "OFF" : command.solenoid;
+        const mode = "MANUAL";
+        const solenoid = command.demoAction === "NEXT" ? "ON" : "OFF";
         const acknowledgement = JSON.stringify({
           commandId: command.commandId,
           status: "APPLIED",
@@ -146,7 +146,9 @@ async function main() {
     await publish(
       mqttClient,
       `device/${DEVICE_UID}/sensor`,
-      JSON.stringify({ ph: 7, mode: "AUTO", solenoid: "OFF", rssi: -40 }),
+      JSON.stringify({ ph: 7, mode: "MANUAL", solenoid: "OFF", rssi: -40,
+        dataSource: "SIMULATION", demoStep: "NORMAL", demoPaused: false,
+        demoRevision: 0, demoSession: DEMO_SESSION }),
     );
     pondId = await waitFor(async () => {
       const result = await database.query<{ id: number }>(
@@ -157,7 +159,7 @@ async function main() {
     });
 
     behavior = "apply";
-    const appliedPost = await postControl({ pondId, solenoid: "ON" });
+    const appliedPost = await postControl({ pondId, demoAction: "NEXT" });
     assert(appliedPost.response.status === 202, "valid command must return 202");
     const applied = await waitFor(async () => {
       const state = await getCommand(appliedPost.json.commandId);
@@ -172,7 +174,7 @@ async function main() {
     console.log("PASS applied and duplicate ACK");
 
     behavior = "wrong-device";
-    const wrongUidPost = await postControl({ pondId, solenoid: "OFF" });
+    const wrongUidPost = await postControl({ pondId, demoAction: "PAUSE" });
     assert(wrongUidPost.response.status === 202, "wrong-UID test command must return 202");
     await Bun.sleep(750);
     assert((await getCommand(wrongUidPost.json.commandId)).status === "SENT", "wrong UID ACK was accepted");
@@ -195,7 +197,7 @@ async function main() {
     console.log("PASS wrong UID and unknown ACK ignored");
 
     behavior = "ignore";
-    const timeoutPost = await postControl({ pondId, mode: "AUTO" });
+    const timeoutPost = await postControl({ pondId, demoAction: "START" });
     assert(timeoutPost.response.status === 202, "timeout test command must return 202");
     await waitFor(async () =>
       (await getCommand(timeoutPost.json.commandId)).status === "TIMED_OUT" ? true : null,
@@ -204,7 +206,7 @@ async function main() {
     const lateAck = JSON.stringify({
       commandId: timeoutPost.json.commandId,
       status: "APPLIED",
-      mode: "AUTO",
+      mode: "MANUAL",
       solenoid: "OFF",
       relayPinLevel: 1,
     });
@@ -216,8 +218,8 @@ async function main() {
 
     behavior = "ignore";
     const concurrent = await Promise.all([
-      postControl({ pondId, solenoid: "ON" }),
-      postControl({ pondId, solenoid: "OFF" }),
+      postControl({ pondId, demoAction: "NEXT" }),
+      postControl({ pondId, demoAction: "PAUSE" }),
     ]);
     const statuses = concurrent.map(({ response }) => response.status).sort();
     assert(statuses[0] === 202 && statuses[1] === 409, `expected 202/409, got ${statuses}`);
@@ -237,13 +239,14 @@ async function main() {
       );
       return result.rows[0]?.connection_state === "offline" ? true : null;
     });
-    const offline = await postControl({ pondId, mode: "AUTO" });
+    const offline = await postControl({ pondId, demoAction: "START" });
     assert(offline.response.status === 409, "offline device must return 409");
     console.log("PASS offline command rejected");
   } finally {
-    await cleanup();
-    await database.end();
-    mqttClient.end(true);
+    try { await cleanup(); } finally {
+      await database.end();
+      mqttClient.end(true);
+    }
   }
 }
 

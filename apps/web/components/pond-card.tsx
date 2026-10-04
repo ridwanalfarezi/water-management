@@ -10,6 +10,7 @@ interface PondCardProps {
   connectionStatus: "online" | "offline";
   waterStatus: "normal" | "peringatan" | "kritis" | "belum_ada_data";
   lastSeenAt: string;
+  simulated?: boolean;
 }
 
 const statusConfig = {
@@ -59,13 +60,14 @@ export function PondCard({
   connectionStatus,
   waterStatus,
   lastSeenAt,
+  simulated = false,
 }: PondCardProps) {
   const cfg = statusConfig[
     connectionStatus === "offline" ? "offline" : waterStatus
   ];
   const statusLabel = getPondStatusLabel(connectionStatus, waterStatus);
   const phOutsideTarget =
-    phLevel !== null && (phLevel < 6.5 || phLevel > 7.5);
+    phLevel !== null && (phLevel < 6.5 || phLevel > 8.5);
 
   return (
     <Link
@@ -101,7 +103,7 @@ export function PondCard({
               {phLevel?.toFixed(1) ?? "--"}
             </span>
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">
-              pH
+              {simulated ? "pH simulasi" : "pH"}
             </span>
           </div>
         </div>

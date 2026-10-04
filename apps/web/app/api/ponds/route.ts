@@ -10,6 +10,11 @@ interface PondSummary {
   solenoid_state: "ON" | "OFF" | null;
   control_mode: "AUTO" | "MANUAL" | null;
   rssi: number | null;
+  data_source: string | null;
+  demo_step: string | null;
+  demo_paused: boolean | null;
+  demo_revision: string | null;
+  demo_session: string | null;
   created_at: string;
   last_seen_at: string;
   connection_status: "online" | "offline";
@@ -19,13 +24,13 @@ interface PondSummary {
 function computeWaterStatus(phLevel: number | null): PondSummary["water_status"] {
   if (phLevel === null) return "belum_ada_data";
   if (phLevel < 6 || phLevel > 8.5) return "kritis";
-  if (phLevel < 6.5 || phLevel > 7.5) return "peringatan";
+  if (phLevel < 6.5 || phLevel > 8.5) return "peringatan";
   return "normal";
 }
 
 export async function GET() {
   try {
-    const result = await pool.query(
+  const result = await pool.query(
       `SELECT d.id AS pond_id,
               d.device_uid,
               d.last_seen_at,
@@ -41,11 +46,14 @@ export async function GET() {
               latest.solenoid_state,
               latest.control_mode,
               latest.rssi,
+              latest.data_source, latest.demo_step, latest.demo_paused,
+              latest.demo_revision, latest.demo_session,
               latest.created_at
        FROM devices d
        LEFT JOIN LATERAL (
          SELECT temperature, do_level, ph_level, solenoid_state,
-                control_mode, rssi, created_at
+                control_mode, rssi, created_at, data_source, demo_step,
+                demo_paused, demo_revision, demo_session
          FROM sensor_data
          WHERE device_id = d.id
          ORDER BY created_at DESC
@@ -63,6 +71,11 @@ export async function GET() {
       solenoid_state: row.solenoid_state,
       control_mode: row.control_mode,
       rssi: row.rssi,
+      data_source: row.data_source,
+      demo_step: row.demo_step,
+      demo_paused: row.demo_paused,
+      demo_revision: row.demo_revision,
+      demo_session: row.demo_session,
       created_at: row.created_at,
       last_seen_at: row.last_seen_at,
       connection_status: row.connection_status,

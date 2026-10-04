@@ -17,10 +17,10 @@ interface SensorRow {
 const SYSTEM_INSTRUCTION = `Kamu adalah pendamping petambak ikan yang merangkum kondisi kolam dengan bahasa sederhana.
 
 Aturan:
-- Gunakan istilah "alat" dan "aliran cairan pengatur pH"
-- Jika pH > 7.5, jelaskan bahwa pH di atas batas aman dan alat otomatis mulai mengatur aliran
-- Jika pH < 6.5, jelaskan bahwa pH di bawah batas aman, aliran dihentikan, dan kondisi air perlu diperiksa
-- Jika pH 6.5-7.5, jelaskan bahwa pH aman
+- Data pH merupakan simulasi expo; valve diperagakan melalui tahap demo, tanpa bahan koreksi pH
+- Jika pH > 8.5, jelaskan bahwa pH simulasi melewati batas atas demo
+- Jika pH < 6.5, jelaskan bahwa pH simulasi melewati batas bawah; lanjutkan tahap demo untuk memperagakan respons valve
+- Jika pH 6.5-8.5, jelaskan bahwa pH simulasi berada dalam rentang normal demo
 - Berikan tindakan yang dapat langsung dilakukan
 
 Format respons:
@@ -58,7 +58,7 @@ ${JSON.stringify(sensorJson, null, 2)}
 
 Tren pH: ${trend}
 pH terakhir: ${rows[0].ph_level ?? "tidak tersedia"}
-Aturan alat: pH > 7.5 memulai aliran cairan pengatur pH; pH < 7.3 menghentikan aliran
+Aturan demo: batas pH 6.5–8.5. Valve dibuka oleh tahap ACTIVE dan ditutup otomatis setelah 3 detik; jangan menyimpulkan posisi valve hanya dari pH.
 
 Berikan ringkasan kondisi harian dalam 2-3 kalimat bahasa Indonesia.`;
 }
@@ -220,17 +220,17 @@ function generateFallbackSummary(rows: SensorRow[], pondId: number): string {
     parts.push(
       `Belum ada bacaan pH untuk Kolam ${pondId}. Pastikan alat menyala dan sensor terpasang dengan baik.`,
     );
-  } else if (latest.ph_level > 7.5) {
+  } else if (latest.ph_level > 8.5) {
     parts.push(
-      `pH Kolam ${pondId} berada di atas batas aman, yaitu ${latest.ph_level.toFixed(1)}. Alat otomatis mengatur aliran cairan pengatur pH.`,
+      `pH simulasi Kolam ${pondId} melewati batas atas demo, yaitu ${latest.ph_level.toFixed(1)}. Pantau perubahan pada grafik.`,
     );
   } else if (latest.ph_level < 6.5) {
     parts.push(
-      `pH Kolam ${pondId} berada di bawah batas aman, yaitu ${latest.ph_level.toFixed(1)}. Aliran dihentikan dan kondisi air perlu diperiksa.`,
+      `pH simulasi Kolam ${pondId} melewati batas bawah demo, yaitu ${latest.ph_level.toFixed(1)}. Lanjutkan tahap demo untuk memperagakan respons valve.`,
     );
   } else {
     parts.push(
-      `Kondisi Kolam ${pondId} stabil dengan pH ${latest.ph_level.toFixed(1)} dalam rentang aman.`,
+      `pH simulasi Kolam ${pondId} adalah ${latest.ph_level.toFixed(1)} dan berada dalam rentang normal demo.`,
     );
   }
 

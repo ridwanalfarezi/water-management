@@ -1,5 +1,8 @@
 "use client";
 
+import { DemoControls } from "@/components/demo-controls";
+import { useDemoController, type DemoDevice } from "@/hooks/use-demo-controller";
+import { LowPhAlert } from "@/components/low-ph-alert";
 import { AIInsightCard } from "@/components/ai-insight-card";
 import { AISummaryCard } from "@/components/ai-summary-card";
 import { JournalForm } from "@/components/journal-form";
@@ -8,10 +11,7 @@ import { PondSelector } from "@/components/pond-selector";
 import { TechnicalDetails } from "@/components/technical-details";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  type CommandStatus,
-  getCommandFeedbackCopy,
   getConnectionLabel,
-  getControlRequestError,
   getFlowLabel,
   getModeLabel,
   getSignalLabel,
@@ -22,12 +22,11 @@ import {
   ArrowLeft,
   CheckCircle2,
   FlaskConical,
-  Loader2,
   Wifi,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -51,7 +50,7 @@ interface SensorData {
   created_at: string;
 }
 
-interface PondSummary {
+interface PondSummary extends DemoDevice {
   pond_id: number;
   device_uid: string;
   last_seen_at: string;
@@ -59,21 +58,6 @@ interface PondSummary {
   control_mode: "AUTO" | "MANUAL" | null;
   rssi: number | null;
   connection_status: "online" | "offline";
-}
-
-interface CommandFeedback {
-  commandId: string;
-  status: CommandStatus;
-  requested: {
-    mode: "AUTO" | "MANUAL" | null;
-    solenoid: "ON" | "OFF" | null;
-  };
-  applied: {
-    mode: "AUTO" | "MANUAL";
-    solenoid: "ON" | "OFF";
-    relayPinLevel: number;
-  } | null;
-  reason: string | null;
 }
 
 function formatTime(timestamp: string) {
@@ -96,20 +80,14 @@ export default function PondDetailPage({
   const [data, setData] = useState<SensorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [controlLoadingTarget, setControlLoadingTarget] = useState<
-    string | null
-  >(null);
   const [allPondIds, setAllPondIds] = useState<number[]>([]);
   const [currentPond, setCurrentPond] = useState<PondSummary | null>(null);
-  const [controlError, setControlError] = useState<string | null>(null);
-  const [commandFeedback, setCommandFeedback] =
-    useState<CommandFeedback | null>(null);
   const [journalRefreshKey, setJournalRefreshKey] = useState(0);
-  const commandPollGeneration = useRef(0);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/data?pondId=${pondId}`);
+      const res = await fetch(`/api/data?pondId=${pondId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Data kolam belum tersedia");
       const json = await res.json();
 
       if (json.success) {
@@ -127,7 +105,8 @@ export default function PondDetailPage({
 
   const fetchPondIds = useCallback(async () => {
     try {
-      const res = await fetch("/api/ponds");
+      const res = await fetch("/api/ponds", { cache: "no-store" });
+      if (!res.ok) throw new Error("Status perangkat belum tersedia");
       const json = await res.json();
       if (json.success) {
         const ponds = json.data as PondSummary[];
@@ -135,7 +114,7 @@ export default function PondDetailPage({
         setCurrentPond(ponds.find((p) => p.pond_id === pondId) ?? null);
       }
     } catch {
-      // fallback
+      setCurrentPond(null);
     }
   }, [pondId]);
 
@@ -145,124 +124,9 @@ export default function PondDetailPage({
     const interval = setInterval(() => {
       fetchData();
       fetchPondIds();
-    }, 5000);
+    }, 500);
     return () => clearInterval(interval);
   }, [fetchData, fetchPondIds]);
-
-  useEffect(() => {
-    commandPollGeneration.current += 1;
-    setCommandFeedback(null);
-    setControlLoadingTarget(null);
-    return () => {
-      commandPollGeneration.current += 1;
-    };
-  }, [pondId]);
-
-  const pollCommandStatus = useCallback(
-    async (commandId: string, generation: number) => {
-      const pollingDeadline = Date.now() + 35_000;
-
-      while (
-        commandPollGeneration.current === generation &&
-        Date.now() < pollingDeadline
-      ) {
-        try {
-          const response = await fetch(`/api/control/${commandId}`, {
-            cache: "no-store",
-          });
-          const json = await response.json();
-          if (!response.ok || !json.success) {
-            throw new Error(json.error || "Gagal membaca status command");
-          }
-
-          const feedback = json.data as CommandFeedback;
-          setCommandFeedback(feedback);
-
-          if (feedback.status === "PENDING" || feedback.status === "SENT") {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            continue;
-          }
-
-          setControlLoadingTarget(null);
-          if (feedback.status === "TIMED_OUT") {
-            await new Promise((resolve) => setTimeout(resolve, 2_000));
-            continue;
-          }
-
-          if (
-            feedback.status === "APPLIED" ||
-            feedback.status === "APPLIED_LATE"
-          ) {
-            await Promise.all([fetchData(), fetchPondIds()]);
-          }
-          return;
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 1_000));
-        }
-      }
-
-      if (commandPollGeneration.current === generation) {
-        setControlLoadingTarget(null);
-        setCommandFeedback((current) =>
-          current?.commandId === commandId &&
-          (current.status === "PENDING" || current.status === "SENT")
-            ? { ...current, status: "TIMED_OUT" }
-            : current,
-        );
-      }
-    },
-    [fetchData, fetchPondIds],
-  );
-
-  const sendControl = async (value: "AUTO" | "ON" | "OFF") => {
-    const generation = commandPollGeneration.current + 1;
-    commandPollGeneration.current = generation;
-    setControlLoadingTarget(value);
-    setControlError(null);
-    setCommandFeedback(null);
-    try {
-      const res = await fetch("/api/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          value === "AUTO" ? { pondId, mode: "AUTO" } : { pondId, solenoid: value },
-        ),
-      });
-      const json = await res.json();
-      if (json.success) {
-        const requestedMode = value === "AUTO" ? "AUTO" : "MANUAL";
-        setCommandFeedback({
-          commandId: json.commandId,
-          status: json.status,
-          requested: {
-            mode: requestedMode,
-            solenoid: value === "AUTO" ? null : value,
-          },
-          applied: null,
-          reason: null,
-        });
-        void pollCommandStatus(json.commandId, generation);
-      } else if (json.commandId && json.status === "PUBLISH_FAILED") {
-        setControlLoadingTarget(null);
-        setCommandFeedback({
-          commandId: json.commandId,
-          status: "PUBLISH_FAILED",
-          requested: {
-            mode: value === "AUTO" ? "AUTO" : "MANUAL",
-            solenoid: value === "AUTO" ? null : value,
-          },
-          applied: null,
-          reason: json.reason || json.error || "Pengiriman ke broker gagal",
-        });
-      } else {
-        setControlLoadingTarget(null);
-        setControlError(getControlRequestError(res.status, json.error));
-      }
-    } catch {
-      setControlLoadingTarget(null);
-      setControlError("Koneksi sedang terganggu. Coba kirim pengaturan lagi.");
-    }
-  };
 
   const chartData = [...data].reverse().map((item) => ({
     time: formatTime(item.created_at),
@@ -271,22 +135,16 @@ export default function PondDetailPage({
 
   const latestRecord = data.length > 0 ? data[0] : null;
   const isHighPH =
-    latestRecord?.ph_level != null ? latestRecord.ph_level > 7.5 : false;
+    latestRecord?.ph_level != null ? latestRecord.ph_level > 8.5 : false;
   const isLowPH =
     latestRecord?.ph_level != null ? latestRecord.ph_level < 6.5 : false;
   const currentSolenoidState = latestRecord?.solenoid_state ?? "OFF";
-  const currentControlMode = latestRecord?.control_mode ?? "AUTO";
   const isDeviceOnline = currentPond?.connection_status === "online";
   const flowLabel = getFlowLabel(latestRecord?.solenoid_state ?? null);
   const modeLabel = getModeLabel(latestRecord?.control_mode ?? null);
   const signalLabel = getSignalLabel(latestRecord?.rssi ?? null);
-  const commandCopy = commandFeedback
-    ? getCommandFeedbackCopy(
-        commandFeedback.status,
-        commandFeedback.applied?.solenoid ?? null,
-      )
-    : null;
-
+  const controller = useDemoController({ device: currentPond, connected: isDeviceOnline && !error, pondId,
+    onApplied: async () => { await Promise.all([fetchData(), fetchPondIds()]); } });
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -302,7 +160,7 @@ export default function PondDetailPage({
     <div className="min-h-screen bg-background pb-12">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b bg-background/80 px-6 py-4 backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
+        <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/kolam"
@@ -325,7 +183,7 @@ export default function PondDetailPage({
                 Kolam {pondId}
               </h1>
               <p className="text-xs text-muted-foreground mt-1">
-                Kondisi kolam saat ini
+                {currentPond?.data_source === "SIMULATION" ? "Kondisi kolam · Data simulasi expo" : "Kondisi kolam saat ini"}
               </p>
             </div>
           </div>
@@ -347,10 +205,10 @@ export default function PondDetailPage({
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 pt-8">
+      <main className="mx-auto max-w-7xl px-4 pt-4 sm:px-6">
         {/* Pond Selector */}
         {allPondIds.length > 1 && (
-          <div className="mb-6">
+          <div className="mb-4">
             <PondSelector currentPondId={pondId} pondIds={allPondIds} />
           </div>
         )}
@@ -363,39 +221,46 @@ export default function PondDetailPage({
           </div>
         )}
 
-        <div className="grid gap-6">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(22rem,1fr)]">
+          <section aria-label="Kondisi kolam dan grafik pH" className="grid min-w-0 gap-4">
           {/* Top Section: Overview Cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardHeader className="flex flex-row items-center justify-between p-4 pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  pH Air
+                  {currentPond?.data_source === "SIMULATION" ? "pH Air · Simulasi" : "pH Air"}
                 </CardTitle>
                 <FlaskConical
                   className={`h-4 w-4 ${isHighPH || isLowPH ? "text-amber-500" : "text-muted-foreground"}`}
                 />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 <div className="flex items-baseline gap-1">
                   <div
-                    className={`text-2xl font-bold tracking-tight ${isHighPH || isLowPH ? "text-amber-600" : "text-foreground"}`}
+                    className={`text-4xl font-bold tracking-tight tabular-nums ${isHighPH || isLowPH ? "text-amber-600" : "text-foreground"}`}
                   >
                     {latestRecord?.ph_level?.toFixed(2) ?? "--"}
                   </div>
                 </div>
+                {currentPond?.data_source === "SIMULATION" && latestRecord && (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className={`h-1.5 w-1.5 rounded-full ${isDeviceOnline && !error ? "bg-emerald-500" : "bg-zinc-400"}`} aria-hidden="true" />
+                    Sampel simulasi · {formatTime(latestRecord.created_at)}
+                  </p>
+                )}
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardHeader className="flex flex-row items-center justify-between p-4 pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Aliran pengatur pH
+                  Valve demo
                 </CardTitle>
                 <FlaskConical
                   className={`h-4 w-4 ${currentSolenoidState === "ON" ? "text-amber-500" : "text-muted-foreground"}`}
                 />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 <div className="text-2xl font-bold tracking-tight">
                   {flowLabel}
                   <span className="ml-2 text-xs font-medium text-muted-foreground">
@@ -406,13 +271,13 @@ export default function PondDetailPage({
             </Card>
 
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardHeader className="flex flex-row items-center justify-between p-4 pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Kekuatan sinyal
                 </CardTitle>
                 <Wifi className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4 pt-0">
                 <div className="text-2xl font-bold tracking-tight">
                   {signalLabel}
                 </div>
@@ -420,34 +285,17 @@ export default function PondDetailPage({
             </Card>
           </div>
 
-          <TechnicalDetails
-            items={[
-              { label: "ID perangkat", value: currentPond?.device_uid },
-              {
-                label: "Terakhir terhubung",
-                value: currentPond?.last_seen_at
-                  ? new Date(currentPond.last_seen_at).toLocaleString("id-ID")
-                  : null,
-              },
-              { label: "Mode sistem", value: currentPond?.control_mode },
-              {
-                label: "Kekuatan sinyal",
-                value:
-                  currentPond?.rssi != null ? `${currentPond.rssi} dBm` : null,
-              },
-              { label: "Status solenoid", value: currentPond?.solenoid_state },
-              {
-                label: "Status koneksi",
-                value: currentPond
-                  ? getConnectionLabel(currentPond.connection_status)
-                  : null,
-              },
-            ]}
-          />
+          {currentPond?.data_source === "SIMULATION" && (
+            <LowPhAlert key={pondId} ph={latestRecord?.ph_level ?? null} timestamp={latestRecord?.created_at ?? null}
+              actionRequired={controller.step === "DANGER"} actionDisabled={!controller.ready || !!controller.pending}
+              pending={!!controller.pending} feedback={controller.feedback}
+              onRespond={() => controller.step === "DANGER" ? controller.send("NEXT") : Promise.resolve(false)}
+              available={controller.ready && !controller.paused && ["FOOD", "DANGER", "ACTIVE", "RECOVERY"].includes(controller.step ?? "")} />
+          )}
 
           {/* Middle Section: Chart */}
           <Card className="overflow-hidden">
-            <CardHeader className="border-b bg-muted/20 pb-4">
+            <CardHeader className="border-b bg-muted/20 px-4 py-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold">
                   Perubahan pH
@@ -464,11 +312,11 @@ export default function PondDetailPage({
             </CardHeader>
             <CardContent className="p-0">
               {chartData.length === 0 ? (
-                <div className="flex h-87.5 items-center justify-center text-sm text-muted-foreground">
+                <div className="flex h-60 xl:h-72 items-center justify-center text-sm text-muted-foreground">
                   Menunggu bacaan pH...
                 </div>
               ) : (
-                <div className="h-87.5 w-full pt-6 pr-6 pb-2">
+                <div className="h-60 xl:h-72 w-full pt-3 pr-4 pb-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={chartData}
@@ -490,6 +338,7 @@ export default function PondDetailPage({
                       />
                       <YAxis
                         yAxisId="ph"
+                        domain={currentPond?.data_source === "SIMULATION" ? [5.8, 8.8] : ["auto", "auto"]}
                         stroke="var(--muted-foreground)"
                         fontSize={11}
                         tickLine={false}
@@ -515,15 +364,17 @@ export default function PondDetailPage({
                           marginBottom: "4px",
                         }}
                       />
+                      <ReferenceLine yAxisId="ph" y={6.5} stroke="#ef4444" strokeDasharray="4 4" opacity={0.6}
+                        label={{ position: "insideBottomLeft", value: "Batas bawah pH 6.5", fill: "#ef4444", fontSize: 10, dy: 12 }} />
                       <ReferenceLine
                         yAxisId="ph"
-                        y={7.5}
+                        y={8.5}
                         stroke="#f59e0b"
                         strokeDasharray="4 4"
                         opacity={0.5}
                         label={{
                           position: "insideTopLeft",
-                          value: "Batas atas pH 7.5",
+                          value: "Batas atas pH 8.5",
                           fill: "#f59e0b",
                           fontSize: 10,
                           dy: -10,
@@ -531,6 +382,7 @@ export default function PondDetailPage({
                       />
                       <Line
                         yAxisId="ph"
+                        isAnimationActive={false}
                         type="monotone"
                         dataKey="ph"
                         name="pH"
@@ -545,6 +397,38 @@ export default function PondDetailPage({
               )}
             </CardContent>
           </Card>
+
+          </section>
+
+          <aside aria-label="Panduan dan kontrol demo" className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
+            <DemoControls controller={controller} />
+          </aside>
+
+          <section aria-label="Informasi tambahan kolam" className="grid min-w-0 gap-6 lg:col-start-1">
+          <TechnicalDetails
+            items={[
+              { label: "ID perangkat", value: currentPond?.device_uid },
+              {
+                label: "Terakhir terhubung",
+                value: currentPond?.last_seen_at
+                  ? new Date(currentPond.last_seen_at).toLocaleString("id-ID")
+                  : null,
+              },
+              { label: "Mode sistem", value: currentPond?.control_mode },
+              {
+                label: "Kekuatan sinyal",
+                value:
+                  currentPond?.rssi != null ? `${currentPond.rssi} dBm` : null,
+              },
+              { label: "Status solenoid", value: currentPond?.solenoid_state },
+              {
+                label: "Status koneksi",
+                value: currentPond
+                  ? getConnectionLabel(currentPond.connection_status)
+                  : null,
+              },
+            ]}
+          />
 
           {/* AI Cards */}
           <div className="grid gap-6 md:grid-cols-2">
@@ -561,108 +445,8 @@ export default function PondDetailPage({
             <JournalList pondId={pondId} refreshKey={journalRefreshKey} />
           </div>
 
-          {/* Bottom Section: Controls & Alerts */}
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Left: Flow Control */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">
-                  Pengaturan aliran pH
-                </CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Saat mode otomatis aktif, alat mengatur aliran cairan berdasarkan bacaan pH.
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <button
-                    type="button"
-                    onClick={() => sendControl("AUTO")}
-                    disabled={!isDeviceOnline || controlLoadingTarget !== null || currentControlMode === "AUTO"}
-                    className="flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    Aktifkan otomatis
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sendControl("ON")}
-                    disabled={
-                      controlLoadingTarget !== null ||
-                      !isDeviceOnline ||
-                      (currentControlMode === "MANUAL" && currentSolenoidState === "ON")
-                    }
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    <FlaskConical className="h-4 w-4" />
-                    Mulai aliran
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sendControl("OFF")}
-                    disabled={
-                      controlLoadingTarget !== null ||
-                      !isDeviceOnline ||
-                      (currentControlMode === "MANUAL" && currentSolenoidState === "OFF")
-                    }
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    Hentikan aliran
-                  </button>
-                </div>
-
-                <div aria-live="polite" aria-atomic="true" role="status">
-                  {controlLoadingTarget !== null && (
-                    <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                      Sedang menerapkan pengaturan...
-                    </div>
-                  )}
-                  {commandFeedback && commandCopy && (
-                      <div
-                        className={`mt-3 rounded-md border px-3 py-2 text-xs ${
-                          commandCopy.tone === "success"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : commandCopy.tone === "warning"
-                              ? "border-amber-200 bg-amber-50 text-amber-800"
-                              : "border-destructive/20 bg-destructive/10 text-destructive"
-                        }`}
-                      >
-                        <p>{commandCopy.message}</p>
-                        <div className="mt-2 border-t border-current/10 pt-2">
-                          <TechnicalDetails
-                            summary="Lihat detail pengiriman"
-                            items={[
-                              {
-                                label: "ID pengaturan",
-                                value: commandFeedback.commandId,
-                              },
-                              { label: "Status ACK", value: commandFeedback.status },
-                              {
-                                label: "Alasan teknis",
-                                value: commandFeedback.reason,
-                              },
-                              {
-                                label: "Level GPIO",
-                                value: commandFeedback.applied?.relayPinLevel,
-                              },
-                            ]}
-                          />
-                        </div>
-                      </div>
-                    )}
-                </div>
-                {!isDeviceOnline && (
-                  <p className="mt-3 text-center text-xs text-muted-foreground">
-                    Pengaturan belum dapat digunakan karena alat tidak terhubung.
-                  </p>
-                )}
-                {controlError && (
-                  <p role="alert" className="mt-3 text-center text-xs text-destructive">
-                    {controlError}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+          {/* Supporting pH explanation */}
+          <div>
 
             {/* Right: Alerts Panel */}
             <div className="flex flex-col justify-end">
@@ -701,16 +485,17 @@ export default function PondDetailPage({
                       }`}
                     >
                       {isHighPH
-                        ? "pH berada di atas batas aman. Dalam mode otomatis, alat mengatur aliran cairan untuk menurunkannya. Pantau perubahan pH secara berkala."
+                        ? "Nilai pH simulasi berada di atas rentang normal. Ikuti tahap demo melalui panel kontrol."
                         : isLowPH
-                          ? "pH berada di bawah batas aman. Aliran cairan dihentikan. Periksa kondisi air sebelum melakukan tindakan berikutnya."
-                          : "pH berada dalam rentang aman. Alat tetap memantau kondisi kolam secara otomatis."}
+                          ? "Nilai pH simulasi berada di bawah rentang normal. Perangkat akan memperagakan respons valve pada tahap berikutnya."
+                          : "Nilai pH berada dalam rentang normal. Perubahan pH pada demo merupakan simulasi dari perangkat."}
                     </p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+          </section>
         </div>
       </main>
     </div>
