@@ -1,58 +1,72 @@
-# ESP32 hardware integration
+# ESP32 expo firmware
 
-This firmware connects the existing pH sensor and relay to KolamPintar over MQTT. Automatic pH control remains on the ESP32, so it continues working if Wi-Fi or the server goes down.
+Upload **`esp32-kolampintar.ino` only**. The demo sequence and Serial configuration are included in this file; `secrets.h` and `demo-sequence.h` are no longer needed. Any old local `secrets.h` is ignored by this firmware.
 
-## Prepare Arduino IDE
+This branch uses simulated pH and a physical relay/valve. It does not read a pH probe or perform chemical dosing. Relay: GPIO 26, active-low. LCD: I2C address `0x27`, 16×2.
 
-1. Install the ESP32 board package.
-2. Install **PubSubClient**, **ArduinoJson**, and **LiquidCrystal I2C** from Library Manager.
-3. Copy `secrets.example.h` to `secrets.h`.
-4. Set the Wi-Fi credentials and the LAN IP of the computer running Docker in `secrets.h`.
-5. Check the calibration voltages, relay polarity, and pins near the top of `esp32-kolampintar.ino`. No pond ID needs to be configured.
-6. Select your ESP32 board and upload the sketch.
+## Upload and configure
 
-Use the server computer's LAN address for `MQTT_HOST`, not `localhost`. Both devices must be on the same network, and TCP port 1883 must be allowed through the server firewall.
+1. Select your ESP32 board in Arduino IDE. Install **PubSubClient**, **ArduinoJson**, and **LiquidCrystal I2C**. Preferences is included in the ESP32 core.
+2. Upload the `.ino`, then open Serial Monitor at **115200 baud**, with **Newline** or **Both NL & CR**.
+3. Enter these commands, replacing the example values:
 
-## MQTT contract
-
-- Telemetry topic: `device/{deviceUid}/sensor`
-- Control topic: `device/{deviceUid}/control`
-- Presence topic: `device/{deviceUid}/status`
-- Acknowledgement topic: `device/{deviceUid}/ack`
-
-`deviceUid` is a stable 12-character hexadecimal identifier generated from the ESP32 eFuse MAC. The backend assigns the device a permanent pond number when it first connects.
-
-Telemetry sent every five seconds:
-
-```json
-{"ph":7.62,"solenoid":"ON","mode":"AUTO","rssi":-51}
+```text
+WIFI SSID Booth Network
+WIFI PASS your-password
+MQTT HOST 192.168.1.100
+MQTT PORT 1883
+WIFI CONNECT
+STATUS
 ```
 
-Dashboard commands:
+Use the server computer's LAN address, not `localhost` or a URL such as `mqtt://...`. The device and server must share a reachable network; allow TCP port 1883 through the server firewall.
 
-```json
-{"commandId":"123e4567-e89b-42d3-a456-426614174000","mode":"AUTO"}
-{"commandId":"123e4567-e89b-42d3-a456-426614174001","mode":"MANUAL","solenoid":"ON"}
-{"commandId":"123e4567-e89b-42d3-a456-426614174002","mode":"MANUAL","solenoid":"OFF"}
-```
+Values are stored in ESP32 NVS and loaded after reboot. Wi-Fi uses namespace `wifi-config` with keys `ssid` and `password`; MQTT uses `mqtt-config` with keys `host` and `port`. These match the old KP-Demo firmware's existing Wi-Fi/host storage. An absent port defaults to 1883. A new device has no embedded SSID, password, or broker host.
 
-Every command must contain a valid UUID `commandId`. After applying the state and reading back the GPIO output, firmware publishes a retained acknowledgement:
+After changing Wi-Fi, run `WIFI CONNECT`. After changing MQTT host/port, run `MQTT CONNECT`. Automatic reconnection also uses the latest saved values. Network-changing commands first stop the demo and close the valve; restart the demo from the staff dashboard after reconnecting.
 
-```json
-{"commandId":"123e4567-e89b-42d3-a456-426614174001","status":"APPLIED","mode":"MANUAL","solenoid":"ON","relayPinLevel":0}
-```
+## Serial commands
 
-Invalid payloads with a valid ID receive `REJECTED`. A duplicate of the latest `commandId` is not executed again; the last acknowledgement is republished. This confirms firmware and relay-pin state only, not physical valve movement or liquid flow.
+| Command | Result |
+|---|---|
+| `HELP` | List commands |
+| `STATUS` | Device UID, connection status, LAN IP, demo stage, pH, and valve |
+| `WIFI SHOW` / `MQTT SHOW` | Show saved runtime configuration; password masked |
+| `WIFI SSID <ssid>` | Save SSID, 1–32 bytes |
+| `WIFI PASS <password>` | Save password: 8–63 bytes or 64 hex characters |
+| `WIFI PASS ` | A trailing space with an empty value clears the password for an open network |
+| `WIFI CONNECT` | Reconnect Wi-Fi and MQTT using the saved configuration |
+| `MQTT HOST <hostname/IP>` | Save hostname or IPv4 address, up to 253 characters |
+| `MQTT PORT <port>` | Save port, 1–65535 |
+| `MQTT CONNECT` | Reconnect MQTT; Wi-Fi must be connected |
 
-For safety, manual ON returns to automatic mode after 60 seconds. Boot, Wi-Fi failure, and MQTT failure do not disable the local automatic hysteresis. The relay starts OFF after every reset.
+Command words are case-insensitive. SSID/password values preserve case and spaces. Passwords are never echoed by firmware. Invalid or oversized input is rejected, without applying a partial command. NVS persistence does not encrypt credentials by itself.
 
-## Verify
+There are no direct Serial `ON`, `OFF`, or `AUTO` commands. Use the staff dashboard for demo transitions so pH, stage, and valve remain consistent.
 
-Start the server stack from the repository root:
+## MQTT contract and valve behavior
+
+Topics stay `device/{deviceUid}/sensor`, `/control`, `/status`, and `/ack`. UID is the ESP32 eFuse MAC formatted as 12 uppercase hexadecimal characters; the server assigns the pond number.
+
+Telemetry every 500 ms includes `ph`, `solenoid`, `mode`, `rssi`, `dataSource: "SIMULATION"`, `demoStep`, `demoPaused`, `demoRevision`, and `demoSession`.
+
+Dashboard commands contain a UUID `commandId`, `demoAction`, and current `demoSession`/`demoRevision`. Actions are `START`, `NEXT`, `PAUSE`, `RESUME`, `RESET`, and `STOP`. Reset/stop can override stale session/revision. ACKs preserve the existing applied/rejected contract and latest-command duplicate protection.
+
+Valve opens only in ACTIVE and closes after at most 3 seconds via an independent ESP timer, including when networking blocks. Pause, reset, stop, and network configuration changes close it. Boot starts with valve OFF. ACK confirms GPIO state, not physical movement or water flow.
+
+Before use, test wiring, relay polarity, physical valve closure, speaker audio, reboot persistence, and network changes on your ESP32 with an isolated plain-water demo setup.
+
+## Host checks
+
+The host tests include the same `.ino` with `KP_HOST_TEST`, excluding Arduino hardware APIs. They exercise the demo sequence and Serial value parser; they do not emulate NVS flash, Wi-Fi, or physical GPIO.
 
 ```powershell
-docker compose up --build
-docker compose logs -f worker
+$env:PATH = "C:/msys64/ucrt64/bin;" + $env:PATH
+g++ -std=c++11 tests/demo-sequence.cpp -o tests/demo-sequence-test.exe
+./tests/demo-sequence-test.exe
+g++ -std=c++11 tests/serial-config.cpp -o tests/serial-config-test.exe
+./tests/serial-config-test.exe
+g++ -std=c++11 tests/demo-bridge.cpp -o tests/demo-bridge.exe
 ```
 
-Open `http://localhost:3000`, choose the matching pond, and confirm that pH, solenoid state, mode, and signal strength update. Test **Open** only with a safe liquid or disconnected dosing line first.
+Run these commands from `hardware/esp32-kolampintar`. The bridge remains available to `apps/worker/integration/expo-device.ts` for MQTT integration tests.

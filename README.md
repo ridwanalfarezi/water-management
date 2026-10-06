@@ -56,12 +56,12 @@ The upload-ready sketch and detailed setup instructions are in [`hardware/esp32-
 In short:
 
 1. Install the ESP32 board package, PubSubClient, ArduinoJson, and LiquidCrystal I2C in Arduino IDE.
-2. Copy `hardware/esp32-kolampintar/secrets.example.h` to `secrets.h`.
-3. Enter the Wi-Fi credentials and the server computer's LAN IP in `secrets.h`.
-4. Verify the pH calibration voltages, pins, and relay polarity in the sketch. The device identity is generated automatically from the ESP32 eFuse MAC.
-5. Upload the sketch and watch its Serial Monitor at 115200 baud.
+2. Verify GPIO 26, active-low relay polarity, and the physical valve setup. This branch simulates pH; it does not read a sensor.
+3. Upload only `hardware/esp32-kolampintar/esp32-kolampintar.ino`. No local header files are needed.
+4. Open Serial Monitor at 115200 baud with a newline ending. Set `WIFI SSID <ssid>`, `WIFI PASS <password>`, and `MQTT HOST <server LAN IP>`, then run `WIFI CONNECT`.
+5. Run `STATUS` to check connectivity. Configuration is stored in NVS and loaded on reboot; device identity comes from the ESP32 eFuse MAC.
 
-Do not use `localhost` as `MQTT_HOST` on the ESP32. Both devices must be reachable on the same network, and TCP port 1883 must be allowed through the server firewall.
+Do not use `localhost` as the MQTT host on the ESP32. Both devices must be reachable on the same network, and TCP port 1883 must be allowed through the server firewall.
 
 ## MQTT contract
 
@@ -77,16 +77,17 @@ For pond 1:
 Telemetry:
 
 ```json
-{"ph":7.62,"solenoid":"ON","mode":"AUTO","rssi":-51}
+{"ph":7.50,"solenoid":"OFF","mode":"MANUAL","rssi":-51,"dataSource":"SIMULATION","demoStep":"NORMAL","demoPaused":false,"demoRevision":0,"demoSession":"0123456789ABCDEF"}
 ```
 
-Dashboard commands:
+Dashboard commands on this expo branch:
 
 ```json
-{"commandId":"123e4567-e89b-42d3-a456-426614174000","mode":"AUTO"}
-{"commandId":"123e4567-e89b-42d3-a456-426614174001","mode":"MANUAL","solenoid":"ON"}
-{"commandId":"123e4567-e89b-42d3-a456-426614174002","mode":"MANUAL","solenoid":"OFF"}
+{"commandId":"123e4567-e89b-42d3-a456-426614174000","demoAction":"START","demoSession":"0123456789ABCDEF","demoRevision":0}
+{"commandId":"123e4567-e89b-42d3-a456-426614174001","demoAction":"RESET"}
 ```
+
+Session/revision values must match the latest telemetry. The staff dashboard supplies them. Legacy AUTO/MANUAL commands are not used on this branch.
 
 Applied acknowledgement (retained):
 
@@ -98,15 +99,15 @@ The control API returns `202` with a `commandId`, and the dashboard polls its st
 
 Temperature and dissolved oxygen fields remain optional if they are added to future hardware.
 
-## Control behavior
+## Control behavior on the expo branch
 
-- `AUTO`: solenoid opens above pH 7.5 and closes below pH 7.3.
-- `MANUAL ON`: solenoid opens immediately, then returns to automatic mode after 60 seconds.
-- `MANUAL OFF`: solenoid closes and remains in manual mode until `AUTO` is selected.
-- Boot behavior: relay starts OFF.
-- Network loss: local automatic control continues.
+- pH values are simulated; this firmware does not read the pH probe or dose chemicals.
+- Staff controls the story with START, NEXT, PAUSE, RESUME, RESET, and STOP.
+- Valve opens in ACTIVE for at most 3 seconds, then closes and the simulated pH recovers.
+- Pause, reset, stop, and Serial network configuration changes close the valve.
+- Boot starts with the valve OFF. Its independent timer closes it even during blocked networking.
 
-Test manual opening with the dosing line disconnected or using a harmless liquid before connecting acid. Confirm the relay polarity and normally-open/normally-closed plumbing behavior physically.
+Use a separate plain-water demonstration setup and verify relay polarity and physical valve closure. See [EXPO_DEMO.md](EXPO_DEMO.md) and the [firmware guide](hardware/esp32-kolampintar/README.md) for the current branch. The calibration guidance in INTEGRATION_GUIDE.md describes the sensor firmware, not this expo sketch.
 
 ## Useful commands
 
@@ -124,4 +125,4 @@ docker compose up -d --build
 docker compose down
 ```
 
-See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) for calibration, multi-pond setup, API commands, and troubleshooting.
+See [EXPO_DEMO.md](EXPO_DEMO.md) for expo setup and current controls.

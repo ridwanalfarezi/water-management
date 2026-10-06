@@ -14,8 +14,8 @@ Branch: `codex/expo-demo`. Daftar kolam berada di `/kolam`, dengan redirect dari
 ## Coba dengan ESP32
 
 1. Jalankan `docker compose up -d --build` dari root proyek. Buka <http://localhost:3000>.
-2. Buka `hardware/esp32-kolampintar/esp32-kolampintar.ino` di Arduino IDE. Salin `secrets.example.h` menjadi `secrets.h`, lalu isi Wi-Fi dan MQTT sesuai panduan hardware. `MQTT_HOST` harus IP LAN komputer server, bukan `localhost`.
-3. Pastikan file `demo-sequence.h` berada di folder sketch yang sama. Upload **sketch dari branch ini**. Firmware langsung menjalankan data simulasi; sensor pH tidak dibaca dan kontrol dosing/asam asli tidak dijalankan.
+2. Buka `hardware/esp32-kolampintar/esp32-kolampintar.ino` di Arduino IDE. Upload satu file `.ino`, lalu buka Serial Monitor 115200 baud. Atur `WIFI SSID`, `WIFI PASS`, dan `MQTT HOST`, kemudian jalankan `WIFI CONNECT`. Konfigurasi tersimpan di NVS; host MQTT harus IP LAN komputer server, bukan `localhost`. Lihat panduan hardware untuk daftar perintah.
+3. Tidak perlu `secrets.h` atau `demo-sequence.h`. Upload **sketch dari branch ini**. Firmware langsung menjalankan data simulasi; sensor pH tidak dibaca dan kontrol dosing/asam asli tidak dijalankan.
 4. Untuk demonstrasi valve, lepaskan bahan koreksi pH. Gunakan jalur air biasa terpisah bila ingin menunjukkan aliran. Periksa pin relay 26, polaritas active-low, dan perilaku valve fisik.
 5. Dari daftar kolam, klik **Kontrol staff** pada perangkat demo. Dashboard mempertahankan kartu kondisi, grafik pH, insight, jurnal, dan susunan panel sebelumnya. Kontrol expo menggantikan tombol kontrol aliran lama pada panel **Kontrol demo expo**. Buka **Monitor audience** pada layar besar. Tunggu indikator terhubung. Nilai awal adalah pH simulasi 7,5 dan valve tertutup.
 6. Panel kontrol menjelaskan tahap saat ini dan langkah berikutnya, termasuk akibat dan waktunya. Tekan **Mulai: pemberian pakan** sambil memperagakan pakan, lalu **Simulasikan pH rendah**. Saat popup muncul, tekan **Buka valve demo · 3 detik** langsung di popup; tombol yang sama juga tersedia di panel.
@@ -55,7 +55,7 @@ ACK membuktikan perintah diterapkan dan level GPIO saat itu, bukan aliran cairan
 
 ## Uji perangkat tanpa ESP32
 
-Adapter pengujian MQTT menggunakan **header C++ yang sama** dengan sketch; adapter ini tidak membuktikan wiring, kompilasi Arduino, timer ESP, atau valve fisik.
+Adapter pengujian MQTT menggunakan **urutan C++ di file `.ino` yang sama** dengan sketch; adapter ini tidak membuktikan wiring, kompilasi Arduino, timer ESP, atau valve fisik.
 
 Di PowerShell dari root proyek, dengan compiler G++ yang tersedia:
 
@@ -111,3 +111,5 @@ Pembaruan layout monitor expo: pH, status valve, grafik, dan kontrol disusun dua
 
 
 Pemisahan monitor audience dan kontrol staff: `/kolam/{id}` menampilkan proses tanpa tombol perintah; `/kolam/{id}/kontrol` mempertahankan panel staff dan aksi valve pada popup. Sirene hanya dibuat pada monitor. Build produksi, typecheck, dan 9 unit test web lolos. React Doctor selesai tanpa error; dua warning kompleksitas terdapat pada DemoControls dan LowPhAlert. Verifikasi dua halaman memakai API fixture sintetis: satu perintah NEXT dari popup staff mengubah monitor ke ACTIVE/ON, lalu RECOVERY, RESTORED, READY; jeda dan telemetri berumur 15 detik tampil benar. Monitor tidak memiliki tombol staff atau tautan kontrol, dan halaman staff membuat nol AudioContext. Screenshot monitor 1366×768 serta monitor/kontrol 390 px diperiksa tanpa overflow dan tanpa page error. Screenshot `audience-*.png` dan `staff-controls-mobile.png` memakai fixture sintetis, bukan bukti penerimaan perangkat fisik.
+
+Verifikasi firmware satu file pada 6 Oktober 2026: tes C++ urutan demo dan parser Serial lulus, termasuk validasi SSID/password/host/port serta pelestarian huruf besar-kecil dan spasi pada password. Adapter C++ berhasil dikompilasi ulang dengan langsung menyertakan `.ino`. Sketch final dikompilasi dari folder bersih yang hanya berisi satu `.ino`, untuk `esp32:esp32:esp32` core 3.3.10: flash 956.372 byte (72%), RAM 49.120 byte (14%). Library LiquidCrystal I2C memberi peringatan deklarasi arsitektur AVR, tetapi kompilasi ESP32 lulus. Tidak ada upload ke ESP32 fisik. Persistensi NVS setelah reboot, pergantian jaringan, LCD, dan penutupan valve fisik perlu diuji pada perangkat; integrasi MQTT tidak diulang karena Docker lokal tidak berjalan.

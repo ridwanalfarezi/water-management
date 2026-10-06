@@ -1,4 +1,5 @@
-#include "../demo-sequence.h"
+#define KP_HOST_TEST
+#include "../esp32-kolampintar.ino"
 #include <iostream>
 #include <string>
 
